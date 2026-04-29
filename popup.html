@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="main-view">
+    <div class="header">
+      <h2 id="subject">Загрузка...</h2>
+      <div class="header-right">
+        <button id="info-btn" class="icon-btn" title="Информация">
+          <img class="icon-svg" src="icons/info.svg" alt="Информация">
+        </button>
+        <button id="theme-toggle" class="icon-btn" title="Смена темы">
+          <img src="icons/sun.svg" class="theme-icon" alt="Светлая тема">
+        </button>
+      </div>
+    </div>
+
+    <div id="points-container"></div>
+<!-- Поле для бонуса -->
+    <div class="bonus-section">
+      <label>Бонус (%):</label>
+      <input type="number" id="bonus-input" min="0" max="100" value="0" step="1">
+    </div>
+    <div id="result" class="result">Текущий рейтинг: 0.0%</div>
+  </div>
+
+  <div id="info-view" style="display: none;">
+    <div class="header">
+      <button id="back-btn" class="icon-btn">
+        <img class="icon-svg" src="icons/arrow-left.svg" alt="←">
+      </button>
+      <h2>Информация</h2>
+    </div>
+    <div id="info-text">
+      <p>Это расширение помогает рассчитать текущий рейтинг по предмету в ЮУрГУ.</p>
+      <p>Вы можете редактировать баллы по каждой работе и видеть, как изменится рейтинг.</p>
+      <p>Для отображения рейтинга, нужно зайти в журнал и выбрать предмет.</p>
+    </div>
+  </div>
+  
+
+    
+
+  <div id="info-view" style="display: none;">
+    <button id="back-btn" class="icon-btn">←</button>
+    <button id="external-link-btn" class="info-link-btn">Сайт ЮУрГУ</button>
+    <h2>Информация</h2>
+    <p>Рейтинг считается только по «Текущему контролю».<br>Бонус вводится вручную.</p>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
