@@ -1,0 +1,33 @@
+{
+    "manifest_version": 3,
+    "name": "Rating Helper by Van",
+    "version": "1.1.0",
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "Rating Helper by Van"
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://online.susu.ru/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://online.susu.ru/*"
+            ],
+            "js": [ "contentScript.js" ]
+        }
+    ],
+    "background": {
+        "service_worker": "background.js"
+    }
+}

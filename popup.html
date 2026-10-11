@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- ОСНОВНОЙ ЭКРАН -->
+  <div id="main-view">
+    <div class="header">
+      <div class="header-left">
+        <h2 id="subject">Загрузка...</h2>
+      </div>
+      <div class="header-right">
+        <button id="dashboard-btn" class="icon-btn" title="Сводка семестра">
+          <img class="icon-svg" src="icons-light/dashboard.svg" alt="Сводка">
+        </button>
+        <button id="settings-btn" class="icon-btn" title="Настройки">
+          <img class="icon-svg" src="icons-light/settings.svg" alt="Настройки">
+        </button>
+        <button id="info-btn" class="icon-btn" title="Информация">
+          <img class="icon-svg" src="icons-light/info.svg" alt="Информация">
+        </button>
+        <button id="theme-toggle" class="icon-btn" title="Смена темы">
+          <img src="icons-light/sun.svg" class="theme-icon" alt="Светлая тема">
+        </button>
+      </div>
+    </div>
+
+    <!-- Баннер черновика (если загружен план) -->
+    <div id="draft-banner" class="draft-banner" style="display: none;">
+      <span>💾 Смоделированный план</span>
+      <button id="revert-draft-btn" class="mini-btn">Сброс к факту</button>
+    </div>
+
+    <!-- Карточка академической оценки и прогресс-бара по шкале БРС (Фича 4) -->
+    <div id="grade-card" class="card grade-card" style="display: none;">
+      <div class="grade-header">
+        <div class="grade-badge-wrap">
+          <span id="grade-badge" class="grade-badge green">Отлично (5)</span>
+        </div>
+        <div class="grade-pct" id="rating-val">0.00%</div>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-track">
+          <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+          <!-- Маркеры шкалы БРС: 59.01% (3), 74.01% (4), 84.01% (5) -->
+          <div class="progress-marker" style="left: 59.01%;" title="Зачёт / 3: 59.01%"></div>
+          <div class="progress-marker" style="left: 74.01%;" title="Хорошо / 4: 74.01%"></div>
+          <div class="progress-marker" style="left: 84.01%;" title="Отлично / 5: 84.01%"></div>
+        </div>
+        <div class="progress-labels">
+          <span>0%</span>
+          <span style="margin-left: 18%;">3 (59%)</span>
+          <span style="margin-left: 12%;">4 (74%)</span>
+          <span style="margin-left: 6%;">5 (84%)</span>
+          <span>100%</span>
+        </div>
+      </div>
+      <div id="grade-subtext" class="grade-subtext"></div>
+    </div>
+
+    <!-- Карточка диапазона (Фича 2) -->
+    <div id="range-card" class="card range-card" style="display: none;">
+      <div class="range-col">
+        <span class="range-label">Минимум</span>
+        <span id="range-min" class="range-val red">0%</span>
+        <span class="range-sub">Если не сдавать</span>
+      </div>
+      <div class="range-divider"></div>
+      <div class="range-col">
+        <span class="range-label">Текущий</span>
+        <span id="range-curr" class="range-val orange">0%</span>
+        <span class="range-sub">С учетом сданного</span>
+      </div>
+      <div class="range-divider"></div>
+      <div class="range-col">
+        <span class="range-label">Потенциал</span>
+        <span id="range-max" class="range-val green">0%</span>
+        <span class="range-sub">Если всё на 100%</span>
+      </div>
+    </div>
+
+    <!-- Целевой калькулятор (Фича 1) -->
+    <div id="target-card" class="card target-card" style="display: none;">
+      <div class="target-title">🎯 Целевой калькулятор (сколько набрать)</div>
+      <div class="target-chips">
+        <button class="target-chip" data-target="59.01">
+          <span class="chip-name">Зачёт (3)</span>
+        </button>
+        <button class="target-chip" data-target="74.01">
+          <span class="chip-name">Хорошо (4)</span>
+        </button>
+        <button class="target-chip" data-target="84.01">
+          <span class="chip-name">Отлично (5)</span>
+        </button>
+      </div>
+      <div id="target-hint" class="target-hint">Выберите желаемую оценку выше</div>
+    </div>
+
+    <!-- Быстрые действия (Фича 3) -->
+    <div id="quick-actions-bar" class="quick-actions-bar" style="display: none;">
+      <button id="quick-rem-max-btn" class="action-btn" title="Поставить максимум только тем работам, где 0">
+        ⚡ Остаток на max
+      </button>
+      <button id="quick-all-max-btn" class="action-btn" title="Поставить 100% всем работам">
+        💯 Всё на max
+      </button>
+      <button id="quick-reset-btn" class="action-btn" title="Вернуть исходные баллы из журнала">
+        🔄 Сброс
+      </button>
+    </div>
+
+    <!-- Контейнер со списком контрольных точек -->
+    <div id="points-container"></div>
+
+    <!-- Режим экзамена (Фича 5) -->
+    <div id="exam-section" class="exam-section" style="display: none;">
+      <div class="exam-header-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="exam-toggle">
+          <span>Иду на экзамен (40%)</span>
+        </label>
+        <div id="exam-input-wrap" class="exam-input-wrap" style="display: none;">
+          <span>Балл (%):</span>
+          <input type="number" id="exam-input" min="0" max="100" value="0" step="1">
+        </div>
+      </div>
+      <div id="exam-formula-tip" class="exam-formula-tip" style="display: none;">
+        Формула: 60% текущий контроль + 40% экзамен
+      </div>
+    </div>
+
+    <!-- Поле для бонуса -->
+    <div class="bonus-section" id="bonus-section" style="display: none;">
+      <label>Бонус (%):</label>
+      <input type="number" id="bonus-input" min="0" max="100" value="0" step="1">
+    </div>
+
+    <!-- Итоговая плашка рейтинга -->
+    <div id="result" class="result">Итоговый рейтинг: 0.0%</div>
+
+    <!-- Кнопка сохранения плана (Фича 8) -->
+    <div id="plan-footer" class="plan-footer" style="display: none;">
+      <button id="save-plan-btn" class="secondary-btn">💾 Сохранить расчёт как план</button>
+    </div>
+  </div>
+
+  <!-- ЭКРАН НАСТРОЕК С ПОДРОБНЫМИ ОПИСАНИЯМИ -->
+  <div id="settings-view" style="display: none;">
+    <div class="header">
+      <button id="back-from-settings-btn" class="icon-btn">
+        <img class="icon-svg" src="icons-light/arrow-left.svg" alt="←">
+      </button>
+      <h2>Настройки функций</h2>
+      <div style="width: 32px;"></div>
+    </div>
+
+    <div class="settings-list">
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">🎯 Калькулятор целей (до 3, 4, 5)</span>
+          <span class="setting-desc">Рассчитывает, сколько баллов нужно набрать за оставшиеся несданные работы (или на экзамене) для получения желаемой оценки, с кнопкой автоподстановки баллов.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="targetCalc" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">📊 Прогноз диапазона (Мин / Макс)</span>
+          <span class="setting-desc">Показывает гарантированный минимум (если больше ничего не сдавать) и максимальный предел (если сдать всё оставшееся на 100%).</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="rangeForecast" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">⚡ Кнопки быстрых действий</span>
+          <span class="setting-desc">Быстрые кнопки: «Остаток на max» (заполняет только нули), «Всё на max» (100% всем работам) и «Сброс» (возврат реальных баллов из журнала).</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="quickActions" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">🏅 Оценка по шкале БРС</span>
+          <span class="setting-desc">Определяет текущую оценку (Незачёт, 3, 4, 5) по официальным порогам БРС (59.01% / 74.01% / 84.01%), отображает цветной бейдж, шкалу и подсказку, сколько не хватает до следующего балла.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="academicGrade" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">📝 Учёт экзамена (дифзачёта)</span>
+          <span class="setting-desc">Позволяет смоделировать сдачу экзамена по формуле: 60% текущий контроль + 40% экзамен + бонус.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="examMode" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">🌐 Информационный виджет на странице</span>
+          <span class="setting-desc">Встраивает удобную плашку с потенциалом и текущим баллом прямо на сайт online.susu.ru рядом с названием предмета.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="inlineWidget" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">📚 Сводка по семестру (Дашборд)</span>
+          <span class="setting-desc">Экран со всеми посещёнными предметами, расчётом общего среднего балла за семестр для стипендии и контролем задолженностей.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="semesterDashboard" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">💾 Сохранение плана (Черновик)</span>
+          <span class="setting-desc">Запоминает смоделированные вами баллы в памяти браузера, чтобы при повторном открытии предмета вы видели свой запланированный результат.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="saveDrafts" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <button id="reset-settings-btn" class="secondary-btn" style="margin-top: 16px;">
+      ↺ Восстановить настройки по умолчанию
+    </button>
+  </div>
+
+  <!-- ЭКРАН СВОДКИ СЕМЕСТРА (ДАШБОРД) -->
+  <div id="dashboard-view" style="display: none;">
+    <div class="header">
+      <button id="back-from-dashboard-btn" class="icon-btn">
+        <img class="icon-svg" src="icons-light/arrow-left.svg" alt="←">
+      </button>
+      <h2>Сводка за семестр</h2>
+      <div style="width: 32px;"></div>
+    </div>
+
+    <div class="card dashboard-avg-card">
+      <div class="dashboard-avg-header">
+        <div>
+          <div class="dashboard-avg-title">Средний рейтинг</div>
+          <div id="dashboard-avg-val" class="dashboard-avg-val">0.0%</div>
+        </div>
+        <div id="dashboard-avg-badge" class="grade-badge green">Отлично</div>
+      </div>
+      <div id="dashboard-stats" class="dashboard-stats">Предметов учтено: 0</div>
+    </div>
+
+    <div id="dashboard-subjects-list" class="dashboard-subjects-list"></div>
+
+    <button id="clear-dashboard-btn" class="secondary-btn" style="margin-top: 12px;">
+      Очистить всю историю предметов
+    </button>
+  </div>
+
+  <!-- ЭКРАН ИНФОРМАЦИИ -->
+  <div id="info-view" style="display: none;">
+    <div class="header">
+      <button id="back-btn" class="icon-btn">
+        <img class="icon-svg" src="icons-light/arrow-left.svg" alt="←">
+      </button>
+      <h2>Информация</h2>
+      <div style="width: 32px;"></div>
+    </div>
+    <div id="info-text">
+      <p><strong>Шкала оценок БРС:</strong></p>
+      <ul>
+        <li>Менее 59.01% — Незачёт / Долг (2)</li>
+        <li>59.01% – 74.00% — Удовлетворительно (3) / Зачтено</li>
+        <li>74.01% – 84.00% — Хорошо (4)</li>
+        <li>84.01% и выше — Отлично (5)</li>
+      </ul>
+      <p><strong>Формула текущего контроля:</strong><br>
+      <code>Рейтинг = Σ(Процент_работы × Вес) / Σ(Весов) + Бонус</code></p>
+      <p><strong>Формула с экзаменом:</strong><br>
+      <code>Итог = Текущий × 0.6 + Экзамен × 0.4 + Бонус</code></p>
+      <p>Вы можете редактировать баллы по каждой работе и настраивать отображение функций в меню настроек ⚙️.</p>
+      <button id="external-link-btn" class="info-link-btn">Открыть сайт ЮУрГУ</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
