@@ -5,51 +5,111 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div id="main-view">
-    <div class="header">
-      <h2 id="subject">Загрузка...</h2>
-      <div class="header-right">
-        <button id="info-btn" class="icon-btn" title="Информация">
-          <img class="icon-svg" src="icons/info.svg" alt="Информация">
-        </button>
-        <button id="theme-toggle" class="icon-btn" title="Смена темы">
-          <img src="icons/sun.svg" class="theme-icon" alt="Светлая тема">
-        </button>
+  <div class="popup-wrapper">
+    <div id="main-view">
+      <div class="header">
+        <h2 id="subject">Загрузка...</h2>
+        <div class="header-right">
+          <button id="info-btn" class="icon-btn" title="Информация">
+            <img class="icon-svg" src="icons/info.svg" alt="Информация">
+          </button>
+          <button id="theme-toggle" class="icon-btn" title="Смена темы">
+            <img src="icons/sun.svg" class="theme-icon" alt="Светлая тема">
+          </button>
+        </div>
+      </div>
+
+      <!-- Навигация по вкладкам -->
+      <div class="tabs-nav">
+        <button class="tab-btn active" data-tab="ratings">Оценки</button>
+        <button class="tab-btn" data-tab="reviews">Отзывы</button>
+        <button class="tab-btn" data-tab="stats">Статистика</button>
+      </div>
+
+      <!-- Вкладка: Оценки -->
+      <div id="ratings-tab" class="tab-content active">
+        <div id="points-container"></div>
+
+        <div class="bonus-section">
+          <label>Бонус (%):</label>
+          <input type="number" id="bonus-input" min="0" max="100" value="0" step="1">
+        </div>
+        <div id="result" class="result">Текущий рейтинг: 0.0%</div>
+      </div>
+
+      <!-- Вкладка: Отзывы -->
+      <div id="reviews-tab" class="tab-content" style="display: none;">
+        <div class="reviews-container">
+          <button id="add-review-btn" class="add-review-btn">+ Добавить отзыв</button>
+          <div id="reviews-list" class="reviews-list"></div>
+        </div>
+      </div>
+
+      <!-- Вкладка: Статистика -->
+      <div id="stats-tab" class="tab-content" style="display: none;">
+        <div class="stats-container">
+          <div id="subject-stats" class="subject-stats"></div>
+          <button id="fetch-all-grades-btn" class="fetch-btn">📊 Парсить все оценки</button>
+          <div id="parse-status" class="parse-status"></div>
+        </div>
       </div>
     </div>
 
-    <div id="points-container"></div>
-<!-- Поле для бонуса -->
-    <div class="bonus-section">
-      <label>Бонус (%):</label>
-      <input type="number" id="bonus-input" min="0" max="100" value="0" step="1">
+    <!-- Модальное окно для добавления отзыва -->
+    <div id="review-modal" class="modal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Добавить отзыв</h3>
+          <button class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <label>Ваш отзыв:</label>
+          <textarea id="review-text" placeholder="Опишите свой опыт с этим предметом..." rows="4"></textarea>
+
+          <label>Оценка (1-5):</label>
+          <select id="review-rating">
+            <option value="">-- Выберите оценку --</option>
+            <option value="1">1 - Очень сложно</option>
+            <option value="2">2 - Сложно</option>
+            <option value="3">3 - Нормально</option>
+            <option value="4">4 - Легко</option>
+            <option value="5">5 - Очень легко</option>
+          </select>
+
+          <label>Сложность предмета:</label>
+          <select id="review-difficulty">
+            <option value="">-- Выберите сложность --</option>
+            <option value="easy">Легкий</option>
+            <option value="medium">Средний</option>
+            <option value="hard">Сложный</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button id="cancel-review-btn" class="btn-secondary">Отмена</button>
+          <button id="submit-review-btn" class="btn-primary">Отправить</button>
+        </div>
+      </div>
     </div>
-    <div id="result" class="result">Текущий рейтинг: 0.0%</div>
+
+    <div id="info-view" style="display: none;">
+      <div class="header">
+        <button id="back-btn" class="icon-btn">
+          <img class="icon-svg" src="icons/arrow-left.svg" alt="←">
+        </button>
+        <h2>Информация</h2>
+      </div>
+      <div id="info-text">
+        <p>✨ <strong>Rating Helper</strong> - помощник в расчёте рейтинга ЮУрГУ.</p>
+        <p>📋 <strong>Оценки</strong> - редактируйте баллы и смотрите текущий рейтинг.</p>
+        <p>💬 <strong>Отзывы</strong> - делитесь опытом и читайте отзывы других студентов.</p>
+        <p>📊 <strong>Статистика</strong> - смотрите среднюю оценку и сложность предметов.</p>
+        <p>Рейтинг считается только по «Текущему контролю». Бонус вводится вручную.</p>
+      </div>
+      <button id="external-link-btn" class="info-link-btn">🔗 Сайт ЮУрГУ</button>
+    </div>
   </div>
 
-  <div id="info-view" style="display: none;">
-    <div class="header">
-      <button id="back-btn" class="icon-btn">
-        <img class="icon-svg" src="icons/arrow-left.svg" alt="←">
-      </button>
-      <h2>Информация</h2>
-    </div>
-    <div id="info-text">
-      <p>Это расширение помогает рассчитать текущий рейтинг по предмету в ЮУрГУ.</p>
-      <p>Вы можете редактировать баллы по каждой работе и видеть, как изменится рейтинг.</p>
-      <p>Для отображения рейтинга, нужно зайти в журнал и выбрать предмет.</p>
-    </div>
-  </div>
-  
-
-    
-
-  <div id="info-view" style="display: none;">
-    <button id="back-btn" class="icon-btn">←</button>
-    <button id="external-link-btn" class="info-link-btn">Сайт ЮУрГУ</button>
-    <h2>Информация</h2>
-    <p>Рейтинг считается только по «Текущему контролю».<br>Бонус вводится вручную.</p>
-  </div>
+  <script src="api-utils.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

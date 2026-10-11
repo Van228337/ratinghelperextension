@@ -1,5 +1,3 @@
-// contentScript.js
-
 function parsePage() {
   const subject =
     document.querySelector(".discipline-name")?.innerText.trim() ||
@@ -40,7 +38,6 @@ function parsePage() {
 
     const weight = parseFloat(weightText);
 
-    // Универсально пропускаем всё без нормального веса
     if (!Number.isFinite(weight) || weight <= 0) return;
 
     let current = 0;
@@ -60,33 +57,77 @@ function parsePage() {
   return { subject, entries };
 }
 
-function waitForJournal(timeout = 10000) {
-  return new Promise((resolve) => {
-    const start = Date.now();
-
-    const check = () => {
-      const data = parsePage();
-
-      if (data.entries.length > 0) {
-        resolve(data);
-        return;
-      }
-
-      if (Date.now() - start > timeout) {
-        resolve(data);
-        return;
-      }
-
-      setTimeout(check, 300);
-    };
-
-    check();
-  });
+function parseAndCache() {
+  const data = parsePage();
+  if (data && data.entries && data.entries.length > 0) {
+    chrome.storage.local.set({ "cachedRatingData": data });
+    return true;
+  }
+  return false;
 }
+
+parseAndCache();
+
+const observer = new MutationObserver(() => {
+  parseAndCache();
+});
+observer.observe(document.body, { childList: true, subtree: true });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg === "getData") {
-    waitForJournal().then(sendResponse);
-    return true;
+    const data = parsePage();
+    sendResponse(data);
+  } else if (msg === "parseAllGrades") {
+    // Парсинг всех финальных оценок через API ЮУрГУ
+    parseAllGradesFromAPI(sendResponse);
   }
+});
+
+async function parseAllGradesFromAPI(sendResponse) {
+  try {
+    // Получить текущий URL для извлечения term ID
+    const urlMatch = window.location.pathname.match(/term\/(\d+)/);
+    if (!urlMatch) {
+      sendResponse({ success: false, error: "Не удалось найти ID термина" });
+      return;
+    }
+
+    const termId = urlMatch[1];
+
+    // API запрос для получения всех оценок по термину
+    const response = await fetch(`https://online.susu.ru/microgateway/api/StudyActivity/UserCheckout/Term/${termId}/ru`);
+    const data = await response.json();
+
+    if (!data || !data.academicPerformance || !data.academicPerformance.discipline) {
+      sendResponse({ success: false, error: "Некорректные данные от сервера" });
+      return;
+    }
+
+    // Парсим оценки
+    const grades = [];
+    data.academicPerformance.discipline.forEach(discipline => {
+      // Проверяем, есть ли финальная оценка (mark)
+      if (discipline.mark !== undefined && discipline.mark !== null) {
+        grades.push({
+          subject: discipline.name || "Неизвестно",
+          teacher: discipline.lecturer || null,
+          rating: parseInt(discipline.mark) || 0,
+        });
+      }
+    });
+
+    sendResponse({
+      success: true,
+      grades: grades,
+      count: grades.length,
+    });
+  } catch (error) {
+    console.error("Ошибка парсинга оценок:", error);
+    sendResponse({
+      success: false,
+      error: error.message,
+    });
+  }
+}
+  return true;
 });
