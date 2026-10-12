@@ -150,6 +150,12 @@ let selectedFile = null;
 let currentActiveEntry = null;
 let currentActiveCheckpointId = null;
 
+// Пользователь, права и сессия
+let myUserId = null;
+let myUserProfile = { is_admin: false, is_banned: false, can_view_materials: true };
+let versionClickCount = 0;
+let versionClickTimeout = null;
+
 // Очистка названия предмета от случайных артефактов
 function cleanSubjectName(name) {
   if (!name) return "";
@@ -228,24 +234,53 @@ adminRefreshBtn?.addEventListener("click", () => {
 });
 
 // Секретный вход по 5 кликам по версии
-appVersionBadge?.addEventListener("click", () => {
+const versionFooter = document.querySelector(".version-footer");
+
+function handleSecretVersionClick() {
   versionClickCount++;
   clearTimeout(versionClickTimeout);
   versionClickTimeout = setTimeout(() => {
     versionClickCount = 0;
-  }, 3000);
+  }, 3500);
 
   if (versionClickCount >= 5) {
     versionClickCount = 0;
     if (adminMyUuid) adminMyUuid.textContent = myUserId || "не определен";
-    if (secretAdminInput) secretAdminInput.value = "";
-    if (secretAdminStatus) secretAdminStatus.textContent = "";
-    if (secretAdminModal) secretAdminModal.style.display = "flex";
+    if (secretAdminInput) {
+      secretAdminInput.value = "";
+      setTimeout(() => secretAdminInput.focus(), 60);
+    }
+    if (secretAdminStatus) {
+      secretAdminStatus.textContent = "";
+      secretAdminStatus.className = "action-status-msg";
+    }
+    if (secretAdminModal) {
+      secretAdminModal.style.display = "flex";
+    }
+  }
+}
+
+appVersionBadge?.addEventListener("click", handleSecretVersionClick);
+versionFooter?.addEventListener("click", (e) => {
+  if (e.target !== appVersionBadge) {
+    handleSecretVersionClick();
   }
 });
 
 secretAdminCancelBtn?.addEventListener("click", () => {
   if (secretAdminModal) secretAdminModal.style.display = "none";
+});
+
+secretAdminModal?.addEventListener("click", (e) => {
+  if (e.target === secretAdminModal) {
+    secretAdminModal.style.display = "none";
+  }
+});
+
+secretAdminInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    secretAdminSubmitBtn?.click();
+  }
 });
 
 secretAdminSubmitBtn?.addEventListener("click", async () => {
@@ -267,7 +302,7 @@ secretAdminSubmitBtn?.addEventListener("click", async () => {
     setTimeout(() => {
       if (secretAdminModal) secretAdminModal.style.display = "none";
       openAdminScreen();
-    }, 700);
+    }, 600);
   } else {
     secretAdminStatus.className = "action-status-msg error";
     secretAdminStatus.textContent = "❌ Неверный ключ доступа.";
