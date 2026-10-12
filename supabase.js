@@ -364,7 +364,8 @@ const SusuSupabase = {
 
   async deleteReview(reviewId) {
     return await this.request(`teacher_reviews?id=eq.${reviewId}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { "Prefer": "return=representation" }
     });
   },
 
@@ -379,8 +380,9 @@ const SusuSupabase = {
 
   async deleteMaterial(materialId, fileUrl) {
     // 1. Удаляем запись из БД
-    await this.request(`materials?id=eq.${materialId}`, {
-      method: "DELETE"
+    const res = await this.request(`materials?id=eq.${materialId}`, {
+      method: "DELETE",
+      headers: { "Prefer": "return=representation" }
     });
 
     // 2. Если файл хранился в Supabase Storage, удаляем его из хранилища
@@ -418,6 +420,19 @@ const SusuSupabase = {
       headers: { "Prefer": "resolution=merge-duplicates" },
       body: JSON.stringify([{ key, value }])
     });
+  },
+
+  // 11. Безопасная серверная проверка мастер-ключа через Supabase RPC
+  async verifyAdminPin(pin) {
+    try {
+      const res = await this.request("rpc/verify_admin_pin", {
+        method: "POST",
+        body: JSON.stringify({ p_pin: pin })
+      });
+      return res === true;
+    } catch {
+      return false;
+    }
   }
 };
 

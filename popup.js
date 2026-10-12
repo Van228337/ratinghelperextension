@@ -296,9 +296,33 @@ const ADMIN_KEY_SHA256 = "699f403c4b12dbe271f50eb54f75e7febcb38a5341e482e93fcc6c
 
 secretAdminSubmitBtn?.addEventListener("click", async () => {
   const pin = secretAdminInput.value.trim();
-  const hashedInput = await computeSHA256(pin);
+  if (!pin) return;
 
-  if (hashedInput === ADMIN_KEY_SHA256) {
+  secretAdminSubmitBtn.disabled = true;
+  secretAdminSubmitBtn.textContent = "⏳ Проверка...";
+  secretAdminStatus.textContent = "";
+
+  let isValid = false;
+
+  // 1. Приоритет: серверная проверка через Supabase RPC (пароль не хранится на клиенте)
+  if (typeof SusuSupabase !== "undefined" && typeof SusuSupabase.verifyAdminPin === "function") {
+    try {
+      isValid = await SusuSupabase.verifyAdminPin(pin);
+    } catch (e) {
+      console.warn("RPC verification failed, using fallback:", e);
+    }
+  }
+
+  // 2. Резервная оффлайн-проверка (если нет связи с Supabase)
+  if (!isValid) {
+    const hashedInput = await computeSHA256(pin);
+    isValid = (hashedInput === ADMIN_KEY_SHA256);
+  }
+
+  secretAdminSubmitBtn.disabled = false;
+  secretAdminSubmitBtn.textContent = "Подтвердить";
+
+  if (isValid) {
     secretAdminStatus.className = "action-status-msg success";
     secretAdminStatus.textContent = "✅ Вы назначены Администратором!";
 
@@ -1645,11 +1669,18 @@ async function renderAdminUsers() {
       matBtn.textContent = u.can_view_materials ? "👀 Работы: ВКЛ" : "🙈 Работы: СКРЫТЫ";
       matBtn.title = "Включить/скрыть доступ к базе работ и скрепкам для этого UUID";
       matBtn.addEventListener("click", async () => {
-        const newVal = !u.can_view_materials;
-        await SusuSupabase.updateUser(u.user_id, { can_view_materials: newVal });
-        u.can_view_materials = newVal;
-        matBtn.className = `admin-mini-btn ${u.can_view_materials ? 'active' : 'danger'}`;
-        matBtn.textContent = u.can_view_materials ? "👀 Работы: ВКЛ" : "🙈 Работы: СКРЫТЫ";
+        try {
+          const newVal = !u.can_view_materials;
+          matBtn.disabled = true;
+          await SusuSupabase.updateUser(u.user_id, { can_view_materials: newVal });
+          u.can_view_materials = newVal;
+          matBtn.className = `admin-mini-btn ${u.can_view_materials ? 'active' : 'danger'}`;
+          matBtn.textContent = u.can_view_materials ? "👀 Работы: ВКЛ" : "🙈 Работы: СКРЫТЫ";
+        } catch (err) {
+          alert("Не удалось изменить статус доступа: " + (err.message || err));
+        } finally {
+          matBtn.disabled = false;
+        }
       });
 
       // 2. Тумблер бана
@@ -1657,11 +1688,18 @@ async function renderAdminUsers() {
       banBtn.className = `admin-mini-btn ${u.is_banned ? 'danger' : ''}`;
       banBtn.textContent = u.is_banned ? "🚫 Забанен" : "✅ Активен";
       banBtn.addEventListener("click", async () => {
-        const newVal = !u.is_banned;
-        await SusuSupabase.updateUser(u.user_id, { is_banned: newVal });
-        u.is_banned = newVal;
-        banBtn.className = `admin-mini-btn ${u.is_banned ? 'danger' : ''}`;
-        banBtn.textContent = u.is_banned ? "🚫 Забанен" : "✅ Активен";
+        try {
+          const newVal = !u.is_banned;
+          banBtn.disabled = true;
+          await SusuSupabase.updateUser(u.user_id, { is_banned: newVal });
+          u.is_banned = newVal;
+          banBtn.className = `admin-mini-btn ${u.is_banned ? 'danger' : ''}`;
+          banBtn.textContent = u.is_banned ? "🚫 Забанен" : "✅ Активен";
+        } catch (err) {
+          alert("Не удалось изменить статус бана: " + (err.message || err));
+        } finally {
+          banBtn.disabled = false;
+        }
       });
 
       // 3. Тумблер админа
@@ -1670,11 +1708,18 @@ async function renderAdminUsers() {
       admBtn.textContent = u.is_admin ? "👑 Админ" : "Юзер";
       admBtn.title = "Выдать или отозвать права администратора";
       admBtn.addEventListener("click", async () => {
-        const newVal = !u.is_admin;
-        await SusuSupabase.updateUser(u.user_id, { is_admin: newVal });
-        u.is_admin = newVal;
-        admBtn.className = `admin-mini-btn ${u.is_admin ? 'active' : ''}`;
-        admBtn.textContent = u.is_admin ? "👑 Админ" : "Юзер";
+        try {
+          const newVal = !u.is_admin;
+          admBtn.disabled = true;
+          await SusuSupabase.updateUser(u.user_id, { is_admin: newVal });
+          u.is_admin = newVal;
+          admBtn.className = `admin-mini-btn ${u.is_admin ? 'active' : ''}`;
+          admBtn.textContent = u.is_admin ? "👑 Админ" : "Юзер";
+        } catch (err) {
+          alert("Не удалось изменить права админа: " + (err.message || err));
+        } finally {
+          admBtn.disabled = false;
+        }
       });
 
       actions.append(matBtn, banBtn, admBtn);
@@ -1717,9 +1762,16 @@ async function renderAdminReviews() {
       delBtn.className = "admin-mini-btn danger";
       delBtn.textContent = "🗑️ Удалить";
       delBtn.addEventListener("click", async () => {
-        if (confirm("Удалить этот отзыв?")) {
+        if (!confirm("Удалить этот отзыв навсегда?")) return;
+        try {
+          delBtn.disabled = true;
+          delBtn.textContent = "⏳...";
           await SusuSupabase.deleteReview(r.id);
           card.remove();
+        } catch (err) {
+          alert("Ошибка удаления отзыва (проверьте SQL-политики в Supabase): " + (err.message || err));
+          delBtn.disabled = false;
+          delBtn.textContent = "🗑️ Удалить";
         }
       });
 
@@ -1769,9 +1821,16 @@ async function renderAdminMaterials() {
       delBtn.className = "admin-mini-btn danger";
       delBtn.textContent = "🗑️ Удалить файл";
       delBtn.addEventListener("click", async () => {
-        if (confirm(`Удалить файл «${m.title}» из базы и хранилища?`)) {
+        if (!confirm(`Удалить файл «${m.title}» из базы и хранилища?`)) return;
+        try {
+          delBtn.disabled = true;
+          delBtn.textContent = "⏳...";
           await SusuSupabase.deleteMaterial(m.id, m.file_url);
           card.remove();
+        } catch (err) {
+          alert("Ошибка удаления файла: " + (err.message || err));
+          delBtn.disabled = false;
+          delBtn.textContent = "🗑️ Удалить файл";
         }
       });
 
