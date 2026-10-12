@@ -898,7 +898,7 @@ async function loadData() {
     currentTabId = tab.id;
 
     if (!tab.url || !tab.url.includes("online.susu.ru")) {
-      subjectEl.textContent = "⚠️ Откройте журнал ЮУрГУ";
+      subjectEl.textContent = "⚠️ Откройте страницу журнала";
       resultEl.textContent = "online.susu.ru";
       applySettingsToUI();
       return;

@@ -1,10 +1,11 @@
 {
     "manifest_version": 3,
-    "name": "Rating Helper by Van",
+    "name": "Rating Helper — Калькулятор БРС",
     "version": "1.2.0",
+    "description": "Калькулятор балльно-рейтинговой системы БРС, планирование оценок, обмен материалами и отзывы.",
     "action": {
         "default_popup": "popup.html",
-        "default_title": "Rating Helper by Van"
+        "default_title": "Rating Helper"
     },
     "icons": {
         "16": "icons/icon16.png",

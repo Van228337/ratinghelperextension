@@ -1,6 +1,6 @@
 // background.js
 
-// Внедряем contentScript во все уже открытые вкладки ЮУрГУ при установке или обновлении расширения
+// Внедряем contentScript во все уже открытые вкладки журнала при установке или обновлении расширения
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     const tabs = await chrome.tabs.query({ url: "https://online.susu.ru/*" });
