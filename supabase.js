@@ -127,33 +127,79 @@ const SusuSupabase = {
     }
   },
 
-  // 5. Загрузка файла в Supabase Storage и создание записи в materials
+  // 5. Загрузка файла через Google Apps Script на Google Диск (15 ГБ, безлимитный трафик)
+  async uploadToGoogleDrive(file, scriptUrl) {
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = reader.result || "";
+        resolve(res.includes(",") ? res.split(",")[1] : res);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = await fetch(scriptUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileData: base64Data,
+        mimeType: file.type || "application/octet-stream"
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error(`Google Drive API error: ${res.status}`);
+    }
+
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || "Не удалось сохранить файл на Google Диске");
+    }
+
+    return data.downloadUrl;
+  },
+
+  // 6. Загрузка материала (приоритет: Google Диск, резерв: Supabase Storage)
   async uploadMaterial({ checkpointId, subjectId, teacherName, title, file, externalUrl, year }) {
     let fileUrl = externalUrl ? externalUrl.trim() : null;
     let fileName = file ? file.name : (fileUrl ? "Внешний ресурс" : "Материал");
 
     if (file) {
-      const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${subjectId}/${checkpointId}/${Date.now()}_${sanitizedName}`;
-
-      const storageUrl = `${this.url}/storage/v1/object/materials/${storagePath}`;
-      const uploadRes = await fetch(storageUrl, {
-        method: "POST",
-        headers: {
-          "apikey": this.key,
-          "Authorization": `Bearer ${this.key}`,
-          "Content-Type": file.type || "application/octet-stream"
-        },
-        body: file
-      });
-
-      if (!uploadRes.ok) {
-        const errText = await uploadRes.text();
-        throw new Error(`Ошибка загрузки файла в хранилище: ${errText}`);
-      }
-
-      fileUrl = `${this.url}/storage/v1/object/public/materials/${storagePath}`;
       fileName = file.name;
+
+      // 1. Проверяем URL Google Apps Script в app_config
+      let gasUrl = null;
+      try {
+        gasUrl = await this.getConfig("google_drive_script_url");
+      } catch {}
+
+      if (gasUrl && gasUrl.trim()) {
+        fileUrl = await this.uploadToGoogleDrive(file, gasUrl.trim());
+      } else {
+        // Резерв: Supabase Storage
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storagePath = `${subjectId}/${checkpointId}/${Date.now()}_${sanitizedName}`;
+
+        const storageUrl = `${this.url}/storage/v1/object/materials/${storagePath}`;
+        const uploadRes = await fetch(storageUrl, {
+          method: "POST",
+          headers: {
+            "apikey": this.key,
+            "Authorization": `Bearer ${this.key}`,
+            "Content-Type": file.type || "application/octet-stream"
+          },
+          body: file
+        });
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(`Ошибка загрузки файла в хранилище: ${errText}`);
+        }
+
+        fileUrl = `${this.url}/storage/v1/object/public/materials/${storagePath}`;
+      }
     }
 
     if (!fileUrl) throw new Error("Укажите файл или ссылку на материал");
