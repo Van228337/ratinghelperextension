@@ -5,9 +5,13 @@ const mainView = document.getElementById("main-view");
 const settingsView = document.getElementById("settings-view");
 const dashboardView = document.getElementById("dashboard-view");
 const infoView = document.getElementById("info-view");
+const materialsView = document.getElementById("materials-view");
+const reviewsView = document.getElementById("reviews-view");
 
 const subjectEl = document.getElementById("subject");
 const subjectTeacherEl = document.getElementById("subject-teacher");
+const teacherReviewsBtn = document.getElementById("teacher-reviews-btn");
+const teacherReviewsCount = document.getElementById("teacher-reviews-count");
 const pointsContainer = document.getElementById("points-container");
 const resultEl = document.getElementById("result");
 const bonusSection = document.getElementById("bonus-section");
@@ -23,6 +27,39 @@ const themeToggle = document.getElementById("theme-toggle");
 const backBtn = document.getElementById("back-btn");
 const backFromSettingsBtn = document.getElementById("back-from-settings-btn");
 const backFromDashboardBtn = document.getElementById("back-from-dashboard-btn");
+const backFromMaterialsBtn = document.getElementById("back-from-materials-btn");
+const backFromReviewsBtn = document.getElementById("back-from-reviews-btn");
+
+// Материалы
+const materialsCheckpointTitle = document.getElementById("materials-checkpoint-title");
+const materialsCheckpointSub = document.getElementById("materials-checkpoint-sub");
+const materialsTotalCount = document.getElementById("materials-total-count");
+const materialsList = document.getElementById("materials-list");
+const matTitleInput = document.getElementById("mat-title-input");
+const matYearInput = document.getElementById("mat-year-input");
+const matFileInput = document.getElementById("mat-file-input");
+const matFileSelectBtn = document.getElementById("mat-file-select-btn");
+const matFileName = document.getElementById("mat-file-name");
+const matUrlInput = document.getElementById("mat-url-input");
+const matSubmitBtn = document.getElementById("mat-submit-btn");
+const matStatusMsg = document.getElementById("mat-status-msg");
+
+// Отзывы
+const reviewsTeacherName = document.getElementById("reviews-teacher-name");
+const reviewsSubjectName = document.getElementById("reviews-subject-name");
+const reviewsStatsCard = document.getElementById("reviews-stats-card");
+const statAvtomatPct = document.getElementById("stat-avtomat-pct");
+const statDiffVal = document.getElementById("stat-diff-val");
+const statAttPct = document.getElementById("stat-att-pct");
+const reviewsTotalCount = document.getElementById("reviews-total-count");
+const reviewsList = document.getElementById("reviews-list");
+const revTextInput = document.getElementById("rev-text-input");
+const revDiffSelect = document.getElementById("rev-diff-select");
+const revYearInput = document.getElementById("rev-year-input");
+const revAvtomatChk = document.getElementById("rev-avtomat-chk");
+const revStrictChk = document.getElementById("rev-strict-chk");
+const revSubmitBtn = document.getElementById("rev-submit-btn");
+const revStatusMsg = document.getElementById("rev-status-msg");
 
 // Карточки фич
 const gradeCard = document.getElementById("grade-card");
@@ -61,14 +98,16 @@ const clearDashboardBtn = document.getElementById("clear-dashboard-btn");
 
 // === Настройки по умолчанию ===
 const DEFAULT_SETTINGS = {
-  targetCalc: true,        // 1. Калькулятор целей
-  rangeForecast: true,     // 2. Прогноз диапазона
-  quickActions: true,      // 3. Быстрые действия
-  academicGrade: true,     // 4. Оценка по шкале БРС
-  examMode: true,          // 5. Учет экзамена
-  inlineWidget: true,      // 6. Виджет на странице
-  semesterDashboard: true, // 7. Сводка семестра
-  saveDrafts: true,        // 8. Сохранение плана
+  targetCalc: true,          // 1. Калькулятор целей
+  rangeForecast: true,       // 2. Прогноз диапазона
+  quickActions: true,        // 3. Быстрые действия
+  academicGrade: true,       // 4. Оценка по шкале БРС
+  examMode: true,            // 5. Учет экзамена
+  inlineWidget: true,        // 6. Виджет на странице
+  semesterDashboard: true,   // 7. Сводка семестра
+  saveDrafts: true,          // 8. Сохранение плана
+  communityMaterials: true,  // 9. База студенческих работ и методичек
+  teacherReviews: true       // 10. Сводка и отзывы о преподавателях
 };
 
 let currentSettings = { ...DEFAULT_SETTINGS };
@@ -76,6 +115,13 @@ let originalData = null;
 let currentScores = [];
 let activeTarget = null;
 let currentTabId = null;
+
+// Переменные для Supabase
+let currentCheckpoints = [];
+let checkpointMaterialsCount = {};
+let selectedFile = null;
+let currentActiveEntry = null;
+let currentActiveCheckpointId = null;
 
 // Очистка названия предмета от случайных артефактов
 function cleanSubjectName(name) {
@@ -97,6 +143,12 @@ function loadIcons(isDark) {
   backBtn.querySelector("img").src = path + "arrow-left.svg";
   backFromSettingsBtn.querySelector("img").src = path + "arrow-left.svg";
   backFromDashboardBtn.querySelector("img").src = path + "arrow-left.svg";
+  if (backFromMaterialsBtn?.querySelector("img")) {
+    backFromMaterialsBtn.querySelector("img").src = path + "arrow-left.svg";
+  }
+  if (backFromReviewsBtn?.querySelector("img")) {
+    backFromReviewsBtn.querySelector("img").src = path + "arrow-left.svg";
+  }
 }
 
 const isDark = localStorage.getItem("theme") === "dark";
@@ -116,6 +168,8 @@ function showView(view) {
   settingsView.style.display = "none";
   dashboardView.style.display = "none";
   infoView.style.display = "none";
+  materialsView.style.display = "none";
+  reviewsView.style.display = "none";
   view.style.display = "block";
 }
 
@@ -133,6 +187,10 @@ infoBtn.addEventListener("click", () => showView(infoView));
 backBtn.addEventListener("click", () => showView(mainView));
 backFromSettingsBtn.addEventListener("click", () => showView(mainView));
 backFromDashboardBtn.addEventListener("click", () => showView(mainView));
+backFromMaterialsBtn?.addEventListener("click", () => showView(mainView));
+backFromReviewsBtn?.addEventListener("click", () => showView(mainView));
+
+teacherReviewsBtn?.addEventListener("click", () => openReviewsScreen());
 
 const externalLinkBtn = document.getElementById("external-link-btn");
 externalLinkBtn?.addEventListener("click", () => {
@@ -155,6 +213,7 @@ function loadSettings() {
 function saveSettings() {
   chrome.storage.local.set({ settings: currentSettings }, () => {
     applySettingsToUI();
+    if (originalData?.entries) render();
   });
 }
 
@@ -168,6 +227,12 @@ function applySettingsToUI() {
   examSection.style.display = (hasData && currentSettings.examMode) ? "block" : "none";
   planFooter.style.display = (hasData && currentSettings.saveDrafts) ? "block" : "none";
   dashboardBtn.style.display = currentSettings.semesterDashboard ? "flex" : "none";
+
+  if (!hasData || !currentSettings.teacherReviews || !originalData?.teacher) {
+    if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
+  } else {
+    if (teacherReviewsBtn) teacherReviewsBtn.style.display = "inline-flex";
+  }
 
   if (!hasData) {
     draftBanner.style.display = "none";
@@ -682,25 +747,64 @@ async function loadData() {
       } else if (subjectTeacherEl) {
         subjectTeacherEl.style.display = "none";
       }
+
+      // Обновляем бейдж отзывов о преподавателе
+      if (response.teacher && currentSettings.teacherReviews && typeof SusuSupabase !== "undefined") {
+        teacherReviewsBtn.style.display = "inline-flex";
+        SusuSupabase.getTeacherReviews(response.teacher).then(({ reviews }) => {
+          if (reviews && reviews.length > 0) {
+            teacherReviewsCount.textContent = reviews.length;
+            teacherReviewsCount.style.display = "inline-block";
+          } else {
+            teacherReviewsCount.style.display = "none";
+          }
+        }).catch(() => {});
+      } else if (teacherReviewsBtn) {
+        teacherReviewsBtn.style.display = "none";
+      }
+
       currentScores = originalData.entries.map((e) => e.current);
       bonusSection.style.display = "flex";
       applySettingsToUI();
       render();
       checkExistingDraft(originalData.subject);
+
+      // Фоновая синхронизация с базой Supabase
+      if (response.subjectId && currentSettings.communityMaterials && typeof SusuSupabase !== "undefined") {
+        SusuSupabase.syncSubjectData(
+          response.subjectId,
+          response.subject,
+          response.teacher,
+          response.entries
+        ).then(async (checkpoints) => {
+          currentCheckpoints = checkpoints || [];
+          const countMap = await SusuSupabase.getMaterialsCountForSubject(response.subjectId);
+          checkpointMaterialsCount = {};
+          currentCheckpoints.forEach((cp) => {
+            if (countMap[cp.id]) {
+              checkpointMaterialsCount[cp.title] = countMap[cp.id];
+            }
+          });
+          render();
+        }).catch((err) => console.warn("Supabase background sync:", err));
+      }
     } else if (response && response.notInSubject) {
       if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+      if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
       subjectEl.textContent = "Выберите предмет";
       resultEl.textContent = "Перейдите в журнал предмета";
       pointsContainer.innerHTML = "";
       applySettingsToUI();
     } else if (response && response.subject && response.subject !== "Без названия") {
       if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+      if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
       subjectEl.textContent = cleanSubjectName(response.subject);
       resultEl.textContent = "Контрольные точки не найдены";
       pointsContainer.innerHTML = "";
       applySettingsToUI();
     } else {
       if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+      if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
       subjectEl.textContent = "Выберите предмет";
       resultEl.textContent = "Перейдите в журнал предмета";
       pointsContainer.innerHTML = "";
@@ -709,6 +813,7 @@ async function loadData() {
   } catch (error) {
     console.error("Ошибка при получении данных:", error);
     if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+    if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
     subjectEl.textContent = "❌ Ошибка";
     applySettingsToUI();
   }
@@ -814,7 +919,27 @@ function render() {
       });
     });
 
-    div.append(title, scoreDisplay);
+    const rightWrap = document.createElement("div");
+    rightWrap.className = "work-actions";
+
+    // Скрепка для базы материалов (Фича 9)
+    if (currentSettings.communityMaterials) {
+      const clipBtn = document.createElement("button");
+      clipBtn.className = "work-clip-btn";
+      const count = checkpointMaterialsCount[entry.title] || 0;
+      clipBtn.innerHTML = count > 0 
+        ? `📎 <span class="clip-counter">${count}</span>` 
+        : `📎`;
+      if (count > 0) clipBtn.classList.add("has-materials");
+      clipBtn.title = count > 0 ? `Материалы к работе (${count})` : "Прикрепить работу / методичку";
+      clipBtn.addEventListener("click", () => {
+        openMaterialsScreen(entry);
+      });
+      rightWrap.appendChild(clipBtn);
+    }
+
+    rightWrap.appendChild(scoreDisplay);
+    div.append(title, rightWrap);
     pointsContainer.appendChild(div);
   });
 
@@ -875,3 +1000,320 @@ function updateRating() {
     originalData.subjectId
   );
 }
+
+// === ЭКРАН МАТЕРИАЛОВ К КОНТРОЛЬНОЙ ТОЧКЕ (ФИЧА 9) ===
+async function openMaterialsScreen(entry) {
+  currentActiveEntry = entry;
+  materialsCheckpointTitle.textContent = entry.title;
+  materialsCheckpointSub.textContent = `${cleanSubjectName(originalData?.subject)} • Максимум: ${entry.max} б.`;
+  matStatusMsg.textContent = "";
+  matStatusMsg.className = "action-status-msg";
+  matTitleInput.value = "";
+  matUrlInput.value = "";
+  matFileInput.value = "";
+  selectedFile = null;
+  matFileName.textContent = "Файл не выбран";
+
+  showView(materialsView);
+
+  let cp = currentCheckpoints.find((c) => c.title === entry.title);
+  if (!cp && originalData?.subjectId && typeof SusuSupabase !== "undefined") {
+    currentCheckpoints = await SusuSupabase.getCheckpoints(originalData.subjectId);
+    cp = currentCheckpoints.find((c) => c.title === entry.title);
+  }
+
+  currentActiveCheckpointId = cp ? cp.id : null;
+  if (currentActiveCheckpointId) {
+    await loadMaterialsList(currentActiveCheckpointId);
+  } else {
+    materialsList.innerHTML = `<div class="empty-state">Синхронизация контрольной точки с базой...</div>`;
+    if (originalData?.subjectId && typeof SusuSupabase !== "undefined") {
+      currentCheckpoints = await SusuSupabase.syncSubjectData(
+        originalData.subjectId,
+        originalData.subject,
+        originalData.teacher,
+        originalData.entries
+      );
+      const reFound = currentCheckpoints.find((c) => c.title === entry.title);
+      if (reFound) {
+        currentActiveCheckpointId = reFound.id;
+        await loadMaterialsList(currentActiveCheckpointId);
+      } else {
+        materialsList.innerHTML = `<div class="empty-state">Пока нет загруженных материалов. Будьте первым!</div>`;
+      }
+    }
+  }
+}
+
+async function loadMaterialsList(checkpointId) {
+  if (!checkpointId || typeof SusuSupabase === "undefined") return;
+  materialsList.innerHTML = `<div class="empty-state">Загрузка материалов...</div>`;
+  try {
+    const list = await SusuSupabase.getMaterialsForCheckpoint(checkpointId);
+    materialsTotalCount.textContent = list.length;
+    materialsList.innerHTML = "";
+
+    if (!list || list.length === 0) {
+      materialsList.innerHTML = `<div class="empty-state">К этой работе пока нет материалов. Загрузите свою работу первым! 🚀</div>`;
+      return;
+    }
+
+    list.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "material-card";
+
+      const header = document.createElement("div");
+      header.className = "material-header";
+
+      const titleEl = document.createElement("div");
+      titleEl.className = "material-title";
+      titleEl.textContent = item.title;
+
+      header.appendChild(titleEl);
+
+      const meta = document.createElement("div");
+      meta.className = "material-meta";
+      meta.innerHTML = `<span>📅 ${item.year} г.</span>`;
+      if (item.isFresh) {
+        meta.innerHTML += `<span class="freshness-badge">🔥 Свежая</span>`;
+      }
+      if (item.teacher_name) {
+        meta.innerHTML += `<span>👨‍🏫 ${item.teacher_name}</span>`;
+      }
+
+      const footer = document.createElement("div");
+      footer.className = "material-footer";
+
+      const dlLink = document.createElement("a");
+      dlLink.className = "download-link-btn";
+      dlLink.href = item.file_url;
+      dlLink.target = "_blank";
+      dlLink.innerHTML = "⬇ Открыть / Скачать";
+
+      const voteGroup = document.createElement("div");
+      voteGroup.className = "vote-group";
+
+      const upBtn = document.createElement("button");
+      upBtn.className = "vote-btn";
+      upBtn.textContent = `▲ ${item.upvotes || 0}`;
+      upBtn.addEventListener("click", async () => {
+        await SusuSupabase.voteMaterial(item.id, true);
+        item.upvotes = (item.upvotes || 0) + 1;
+        upBtn.textContent = `▲ ${item.upvotes}`;
+      });
+
+      const downBtn = document.createElement("button");
+      downBtn.className = "vote-btn";
+      downBtn.textContent = `▼ ${item.downvotes || 0}`;
+      downBtn.addEventListener("click", async () => {
+        await SusuSupabase.voteMaterial(item.id, false);
+        item.downvotes = (item.downvotes || 0) + 1;
+        downBtn.textContent = `▼ ${item.downvotes}`;
+      });
+
+      voteGroup.append(upBtn, downBtn);
+      footer.append(dlLink, voteGroup);
+
+      card.append(header, meta, footer);
+      materialsList.appendChild(card);
+    });
+  } catch (e) {
+    materialsList.innerHTML = `<div class="empty-state">Ошибка загрузки: ${e.message}</div>`;
+  }
+}
+
+// Загрузка файла в материалах
+matFileSelectBtn?.addEventListener("click", () => matFileInput.click());
+matFileInput?.addEventListener("change", () => {
+  if (matFileInput.files && matFileInput.files[0]) {
+    selectedFile = matFileInput.files[0];
+    const sizeMb = (selectedFile.size / 1024 / 1024).toFixed(2);
+    matFileName.textContent = `${selectedFile.name} (${sizeMb} MB)`;
+  } else {
+    selectedFile = null;
+    matFileName.textContent = "Файл не выбран";
+  }
+});
+
+matSubmitBtn?.addEventListener("click", async () => {
+  if (!currentActiveCheckpointId && currentActiveEntry) {
+    const found = currentCheckpoints.find((c) => c.title === currentActiveEntry.title);
+    if (found) currentActiveCheckpointId = found.id;
+  }
+
+  if (!currentActiveCheckpointId) {
+    matStatusMsg.className = "action-status-msg error";
+    matStatusMsg.textContent = "Ошибка: контрольная точка не синхронизирована.";
+    return;
+  }
+
+  const title = matTitleInput.value.trim();
+  const externalUrl = matUrlInput.value.trim();
+  const year = parseInt(matYearInput.value, 10) || new Date().getFullYear();
+
+  if (!selectedFile && !externalUrl) {
+    matStatusMsg.className = "action-status-msg error";
+    matStatusMsg.textContent = "Выберите файл или укажите ссылку на материал!";
+    return;
+  }
+
+  matSubmitBtn.disabled = true;
+  matSubmitBtn.textContent = "⏳ Загрузка в базу...";
+  matStatusMsg.className = "action-status-msg";
+  matStatusMsg.textContent = "";
+
+  try {
+    await SusuSupabase.uploadMaterial({
+      checkpointId: currentActiveCheckpointId,
+      subjectId: originalData?.subjectId,
+      teacherName: originalData?.teacher,
+      title: title || (selectedFile ? selectedFile.name : "Материал"),
+      file: selectedFile,
+      externalUrl: externalUrl || null,
+      year
+    });
+
+    matStatusMsg.className = "action-status-msg success";
+    matStatusMsg.textContent = "✅ Работа успешно добавлена!";
+    matTitleInput.value = "";
+    matUrlInput.value = "";
+    matFileInput.value = "";
+    selectedFile = null;
+    matFileName.textContent = "Файл не выбран";
+
+    await loadMaterialsList(currentActiveCheckpointId);
+
+    // Обновляем бейдж скрепки
+    if (currentActiveEntry) {
+      checkpointMaterialsCount[currentActiveEntry.title] = (checkpointMaterialsCount[currentActiveEntry.title] || 0) + 1;
+      render();
+    }
+  } catch (err) {
+    matStatusMsg.className = "action-status-msg error";
+    matStatusMsg.textContent = `Ошибка: ${err.message || "Не удалось загрузить"}`;
+  } finally {
+    matSubmitBtn.disabled = false;
+    matSubmitBtn.textContent = "📤 Опубликовать в базу";
+  }
+});
+
+// === ЭКРАН СВОДКИ И ОТЗЫВОВ О ПРЕПОДАВАТЕЛЕ (ФИЧА 10) ===
+async function openReviewsScreen() {
+  reviewsTeacherName.textContent = `👨‍🏫 ${originalData?.teacher || "Преподаватель"}`;
+  reviewsSubjectName.textContent = cleanSubjectName(originalData?.subject);
+  revStatusMsg.textContent = "";
+  revStatusMsg.className = "action-status-msg";
+  revTextInput.value = "";
+
+  showView(reviewsView);
+  if (originalData?.teacher) {
+    await loadTeacherReviewsList(originalData.teacher);
+  }
+}
+
+async function loadTeacherReviewsList(teacherName) {
+  if (!teacherName || typeof SusuSupabase === "undefined") return;
+  reviewsList.innerHTML = `<div class="empty-state">Загрузка отзывов...</div>`;
+  try {
+    const { reviews, stats } = await SusuSupabase.getTeacherReviews(teacherName);
+    reviewsTotalCount.textContent = reviews.length;
+    reviewsList.innerHTML = "";
+
+    if (stats) {
+      reviewsStatsCard.style.display = "block";
+      statAvtomatPct.textContent = `${stats.avtomatPct}%`;
+      statDiffVal.textContent = `${stats.avgDifficulty} / 5`;
+      statAttPct.textContent = `${stats.attendancePct}%`;
+    } else {
+      reviewsStatsCard.style.display = "none";
+    }
+
+    if (!reviews || reviews.length === 0) {
+      reviewsList.innerHTML = `<div class="empty-state">Об этом преподавателе пока нет отзывов. Напишите первый совет! 💡</div>`;
+      return;
+    }
+
+    reviews.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "review-card";
+
+      const header = document.createElement("div");
+      header.className = "review-header";
+      header.style.fontSize = "12px";
+      header.style.lineHeight = "1.35";
+      header.textContent = item.text;
+
+      const meta = document.createElement("div");
+      meta.className = "review-meta";
+      meta.innerHTML = `<span>📅 ${item.year} г.</span><span>⚡ Сложность: ${item.difficulty}/5</span>`;
+      if (item.gives_avtomat) {
+        meta.innerHTML += `<span class="freshness-badge">🎯 Автомат</span>`;
+      }
+      if (item.attendance_strict) {
+        meta.innerHTML += `<span>📝 Строго посещения</span>`;
+      }
+
+      const footer = document.createElement("div");
+      footer.className = "review-footer";
+
+      const likeBtn = document.createElement("button");
+      likeBtn.className = "vote-btn";
+      likeBtn.textContent = `👍 Полезно (${item.likes || 0})`;
+      likeBtn.addEventListener("click", async () => {
+        await SusuSupabase.likeReview(item.id);
+        item.likes = (item.likes || 0) + 1;
+        likeBtn.textContent = `👍 Полезно (${item.likes})`;
+      });
+
+      footer.appendChild(likeBtn);
+      card.append(header, meta, footer);
+      reviewsList.appendChild(card);
+    });
+  } catch (e) {
+    reviewsList.innerHTML = `<div class="empty-state">Ошибка загрузки отзывов: ${e.message}</div>`;
+  }
+}
+
+revSubmitBtn?.addEventListener("click", async () => {
+  const text = revTextInput.value.trim();
+  if (!text) {
+    revStatusMsg.className = "action-status-msg error";
+    revStatusMsg.textContent = "Пожалуйста, напишите текст отзыва или совета!";
+    return;
+  }
+
+  revSubmitBtn.disabled = true;
+  revSubmitBtn.textContent = "⏳ Отправка...";
+  revStatusMsg.className = "action-status-msg";
+  revStatusMsg.textContent = "";
+
+  try {
+    await SusuSupabase.addTeacherReview({
+      teacherName: originalData?.teacher,
+      subjectId: originalData?.subjectId,
+      subjectName: originalData?.subject,
+      text,
+      difficulty: parseInt(revDiffSelect.value, 10) || 3,
+      givesAvtomat: revAvtomatChk.checked,
+      attendanceStrict: revStrictChk.checked,
+      year: parseInt(revYearInput.value, 10) || new Date().getFullYear()
+    });
+
+    revStatusMsg.className = "action-status-msg success";
+    revStatusMsg.textContent = "✅ Спасибо! Ваш совет сохранён.";
+    revTextInput.value = "";
+
+    await loadTeacherReviewsList(originalData?.teacher);
+
+    // Обновляем бейдж счетчика в шапке
+    const count = parseInt(teacherReviewsCount.textContent, 10) || 0;
+    teacherReviewsCount.textContent = count + 1;
+    teacherReviewsCount.style.display = "inline-block";
+  } catch (err) {
+    revStatusMsg.className = "action-status-msg error";
+    revStatusMsg.textContent = `Ошибка: ${err.message || "Не удалось сохранить"}`;
+  } finally {
+    revSubmitBtn.disabled = false;
+    revSubmitBtn.textContent = "💬 Опубликовать совет";
+  }
+});

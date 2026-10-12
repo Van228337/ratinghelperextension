@@ -11,6 +11,10 @@
       <div class="header-left">
         <h2 id="subject">Загрузка...</h2>
         <div id="subject-teacher" class="subject-teacher" style="display: none;"></div>
+        <button id="teacher-reviews-btn" class="teacher-reviews-btn" style="display: none;">
+          <span>💬 О преподавателе</span>
+          <span id="teacher-reviews-count" class="badge-counter" style="display: none;">0</span>
+        </button>
       </div>
       <div class="header-right">
         <button id="dashboard-btn" class="icon-btn" title="Сводка семестра">
@@ -245,6 +249,28 @@
           <span class="slider"></span>
         </label>
       </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">📎 База студенческих работ и методичек</span>
+          <span class="setting-desc">Отображает иконку скрепки у каждой контрольной точки для скачивания отчётов, кода и методичек других студентов, а также загрузки своих работ.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="communityMaterials" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-title">💬 Сводка и отзывы о преподавателях</span>
+          <span class="setting-desc">Показывает советы студентов по сдаче дисциплины, требования к автоматам, строгость посещаемости и уровень сложности преподавателя.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-setting="teacherReviews" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>
 
     <button id="reset-settings-btn" class="secondary-btn" style="margin-top: 16px;">
@@ -306,6 +332,140 @@
     </div>
   </div>
 
+  <!-- ЭКРАН МАТЕРИАЛОВ К КОНТРОЛЬНОЙ ТОЧКЕ -->
+  <div id="materials-view" style="display: none;">
+    <div class="header">
+      <button id="back-from-materials-btn" class="icon-btn">
+        <img class="icon-svg" src="icons-light/arrow-left.svg" alt="←">
+      </button>
+      <div class="materials-header-title">
+        <h2 id="materials-checkpoint-title">Материалы к работе</h2>
+        <div id="materials-checkpoint-sub" class="materials-checkpoint-sub"></div>
+      </div>
+      <div style="width: 32px;"></div>
+    </div>
+
+    <!-- Список материалов -->
+    <div class="materials-content">
+      <div class="materials-section-title">
+        <span>📎 Студенческие работы и методички</span>
+        <span id="materials-total-count" class="badge-counter">0</span>
+      </div>
+      <div id="materials-list" class="materials-list">
+        <div class="empty-state">Загрузка...</div>
+      </div>
+
+      <!-- Форма добавления работы -->
+      <div class="card add-material-card">
+        <div class="add-material-title">📤 Поделиться решением / работой</div>
+        <div class="add-material-desc">Загрузите файл отчёта, код или методичку для однокурсников.</div>
+
+        <input type="text" id="mat-title-input" class="mat-input" placeholder="Название (напр. Отчёт вар. 4, код C++)">
+        
+        <div class="mat-row">
+          <label class="mat-label">Год выполнения:</label>
+          <input type="number" id="mat-year-input" class="mat-input-small" value="2026" min="2018" max="2030">
+        </div>
+
+        <div class="file-upload-wrap">
+          <input type="file" id="mat-file-input" style="display: none;">
+          <button type="button" id="mat-file-select-btn" class="secondary-btn">📁 Выбрать файл</button>
+          <span id="mat-file-name" class="file-name-preview">Файл не выбран</span>
+        </div>
+
+        <div style="text-align: center; margin: 4px 0; font-size: 11px; opacity: 0.6;">или ссылка на Яндекс.Диск / Google Drive:</div>
+        <input type="url" id="mat-url-input" class="mat-input" placeholder="https://drive.google.com/...">
+
+        <button id="mat-submit-btn" class="action-submit-btn">📤 Опубликовать в базу</button>
+        <div id="mat-status-msg" class="action-status-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ЭКРАН СВОДКИ О ПРЕПОДАВАТЕЛЕ -->
+  <div id="reviews-view" style="display: none;">
+    <div class="header">
+      <button id="back-from-reviews-btn" class="icon-btn">
+        <img class="icon-svg" src="icons-light/arrow-left.svg" alt="←">
+      </button>
+      <div class="reviews-header-title">
+        <h2 id="reviews-teacher-name">Преподаватель</h2>
+        <div id="reviews-subject-name" class="reviews-subject-name"></div>
+      </div>
+      <div style="width: 32px;"></div>
+    </div>
+
+    <!-- Сводная статистика преподавателя -->
+    <div id="reviews-stats-card" class="card reviews-stats-card" style="display: none;">
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="stat-box-val" id="stat-avtomat-pct">0%</span>
+          <span class="stat-box-lbl">🎯 Автоматы</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-box-val" id="stat-diff-val">0 / 5</span>
+          <span class="stat-box-lbl">⚡ Сложность</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-box-val" id="stat-att-pct">0%</span>
+          <span class="stat-box-lbl">📝 Посещаемость</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Список отзывов -->
+    <div class="reviews-content">
+      <div class="materials-section-title">
+        <span>💬 Советы и отзывы студентов</span>
+        <span id="reviews-total-count" class="badge-counter">0</span>
+      </div>
+      <div id="reviews-list" class="reviews-list">
+        <div class="empty-state">Загрузка отзывов...</div>
+      </div>
+
+      <!-- Форма добавления отзыва -->
+      <div class="card add-material-card">
+        <div class="add-material-title">✍️ Оставить совет по сдаче</div>
+        <div class="add-material-desc">Напишите, как принимает препод, на что обращает внимание и как получить автомат.</div>
+
+        <textarea id="rev-text-input" class="rev-textarea" placeholder="Советы, требования, вопросы на защите..."></textarea>
+
+        <div class="rev-options-grid">
+          <div class="rev-opt-row">
+            <label>Сложность:</label>
+            <select id="rev-diff-select" class="mat-select">
+              <option value="1">1 — Халява</option>
+              <option value="2">2 — Легко</option>
+              <option value="3" selected>3 — Нормально</option>
+              <option value="4">4 — Сложно</option>
+              <option value="5">5 — Жесть</option>
+            </select>
+          </div>
+
+          <div class="rev-opt-row">
+            <label>Год сдачи:</label>
+            <input type="number" id="rev-year-input" class="mat-input-small" value="2026" min="2018" max="2030">
+          </div>
+        </div>
+
+        <div class="rev-checkboxes">
+          <label class="checkbox-label">
+            <input type="checkbox" id="rev-avtomat-chk">
+            <span>Ставит автомат без экзамена</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="rev-strict-chk">
+            <span>Строго отмечает посещаемость</span>
+          </label>
+        </div>
+
+        <button id="rev-submit-btn" class="action-submit-btn">💬 Опубликовать совет</button>
+        <div id="rev-status-msg" class="action-status-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="supabase.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -328,6 +328,11 @@ function renderInlineWidget() {
       });
     }
 
+    // Фоновая синхронизация с Supabase
+    if (typeof SusuSupabase !== "undefined" && data.subjectId && cleanName && data.entries.length > 0) {
+      SusuSupabase.syncSubjectData(data.subjectId, cleanName, teacherName, data.entries).catch(() => {});
+    }
+
     injectInlineStyles();
 
     let widget = document.getElementById("susu-rating-inline-widget");
