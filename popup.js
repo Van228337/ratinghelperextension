@@ -1452,19 +1452,37 @@ async function loadTeacherReviewsList(teacherName) {
   if (!teacherName || typeof SusuSupabase === "undefined") return;
   reviewsList.innerHTML = `<div class="empty-state">Загрузка отзывов...</div>`;
   try {
-    // 1. Подтягиваем кэшированную AI-выжимку от нейросети
+    const { reviews, stats } = await SusuSupabase.getTeacherReviews(teacherName);
+    reviewsTotalCount.textContent = reviews ? reviews.length : 0;
+    reviewsList.innerHTML = "";
+
+    // 1. Подтягиваем или автогенерируем AI-выжимку
     const summary = await SusuSupabase.getTeacherSummary(teacherName);
     if (summary && summary.summary_text && aiSummaryCard) {
       aiSummaryCard.style.display = "block";
-      aiSummaryCountBadge.textContent = `на основе ${summary.reviews_count || 1} отзывов`;
+      aiSummaryCountBadge.textContent = `на основе ${summary.reviews_count || (reviews ? reviews.length : 1)} отзывов`;
       aiSummaryText.textContent = summary.summary_text;
+    } else if (reviews && reviews.length > 0 && typeof SusuGroq !== "undefined" && aiSummaryCard) {
+      // Отзывы есть, а выжимки еще нет — генерируем на лету и сохраняем!
+      aiSummaryCard.style.display = "block";
+      aiSummaryCountBadge.textContent = "✨ Генерация нейросетью...";
+      aiSummaryText.textContent = "Анализирую отзывы студентов и составляю выжимку...";
+
+      SusuGroq.generateTeacherSummary(teacherName, reviews).then(async (newSummary) => {
+        if (newSummary && newSummary.trim()) {
+          aiSummaryCountBadge.textContent = `на основе ${reviews.length} отзывов`;
+          aiSummaryText.textContent = newSummary.trim();
+          await SusuSupabase.saveTeacherSummary(teacherName, newSummary.trim(), reviews.length);
+        } else {
+          aiSummaryCard.style.display = "none";
+        }
+      }).catch((e) => {
+        console.warn("AI summary error:", e);
+        if (aiSummaryCard) aiSummaryCard.style.display = "none";
+      });
     } else if (aiSummaryCard) {
       aiSummaryCard.style.display = "none";
     }
-
-    const { reviews, stats } = await SusuSupabase.getTeacherReviews(teacherName);
-    reviewsTotalCount.textContent = reviews.length;
-    reviewsList.innerHTML = "";
 
     if (stats) {
       reviewsStatsCard.style.display = "block";
@@ -1589,9 +1607,13 @@ revSubmitBtn?.addEventListener("click", async () => {
 
     if (typeof SusuGroq !== "undefined" && (count === 1 || count % 5 === 0)) {
       revSubmitBtn.textContent = "✨ Генерация AI-выжимки...";
-      const newSummary = await SusuGroq.generateTeacherSummary(originalData?.teacher, reviews);
-      if (newSummary) {
-        await SusuSupabase.saveTeacherSummary(originalData?.teacher, newSummary, count);
+      try {
+        const newSummary = await SusuGroq.generateTeacherSummary(originalData?.teacher, reviews);
+        if (newSummary && newSummary.trim()) {
+          await SusuSupabase.saveTeacherSummary(originalData?.teacher, newSummary.trim(), count);
+        }
+      } catch (sumErr) {
+        console.warn("Summary generation error:", sumErr);
       }
     }
 

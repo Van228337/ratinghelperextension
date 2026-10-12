@@ -19,7 +19,7 @@ const SusuGroq = {
       return "";
     }
   },
-  model: "llama-3.1-8b-instant",
+  model: "qwen/qwen3.8-27b",
   endpoint: "https://api.groq.com/openai/v1/chat/completions",
 
   // 1. Локальный фильтр без вызова Groq (0 ms, 0 токенов, мгновенная блокировка мусора)
@@ -112,27 +112,45 @@ const SusuGroq = {
     const key = await this.getApiKey();
     if (!key) throw new Error("Groq API key не настроен");
 
-    const response = await fetch(this.endpoint, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${key}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages,
-        max_tokens: maxTokens,
-        temperature
-      })
-    });
+    const candidateModels = [this.model, "qwen/qwen3.8-27b", "llama-3.1-8b-instant", "llama3-8b-8192"];
+    const modelsToTry = [...new Set(candidateModels)];
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Groq API error ${response.status}: ${err}`);
+    let lastError = null;
+    for (const m of modelsToTry) {
+      try {
+        const response = await fetch(this.endpoint, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${key}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: m,
+            messages,
+            max_tokens: maxTokens,
+            temperature
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content || "";
+          if (content) {
+            this.model = m; // Запоминаем успешно ответившую модель
+            return content;
+          }
+        } else {
+          const errText = await response.text();
+          lastError = new Error(`Groq API error (${m}) ${response.status}: ${errText}`);
+          console.warn(`Model ${m} failed:`, errText);
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`Fetch error for model ${m}:`, err);
+      }
     }
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "";
+    throw lastError || new Error("Все модели Groq временно недоступны");
   },
 
   // 2. Двухуровневая модерация отзыва (сначала локальный фильтр, затем строгий Groq AI)
