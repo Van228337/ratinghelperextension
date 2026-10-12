@@ -283,17 +283,6 @@ secretAdminInput?.addEventListener("keydown", (e) => {
   }
 });
 
-async function computeSHA256(text) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-// Хэш мастер-ключа (пароль не хранится в открытом виде)
-const ADMIN_KEY_SHA256 = "699f403c4b12dbe271f50eb54f75e7febcb38a5341e482e93fcc6c90a4290741";
-
 secretAdminSubmitBtn?.addEventListener("click", async () => {
   const pin = secretAdminInput.value.trim();
   if (!pin) return;
@@ -304,19 +293,13 @@ secretAdminSubmitBtn?.addEventListener("click", async () => {
 
   let isValid = false;
 
-  // 1. Приоритет: серверная проверка через Supabase RPC (пароль не хранится на клиенте)
+  // Безопасная серверная проверка через Supabase RPC (пароль и логика не хранятся на клиенте)
   if (typeof SusuSupabase !== "undefined" && typeof SusuSupabase.verifyAdminPin === "function") {
     try {
       isValid = await SusuSupabase.verifyAdminPin(pin);
     } catch (e) {
-      console.warn("RPC verification failed, using fallback:", e);
+      console.warn("RPC verification failed:", e);
     }
-  }
-
-  // 2. Резервная оффлайн-проверка (если нет связи с Supabase)
-  if (!isValid) {
-    const hashedInput = await computeSHA256(pin);
-    isValid = (hashedInput === ADMIN_KEY_SHA256);
   }
 
   secretAdminSubmitBtn.disabled = false;
