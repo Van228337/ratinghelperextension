@@ -283,9 +283,22 @@ secretAdminInput?.addEventListener("keydown", (e) => {
   }
 });
 
+async function computeSHA256(text) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Хэш мастер-ключа (пароль не хранится в открытом виде)
+const ADMIN_KEY_SHA256 = "699f403c4b12dbe271f50eb54f75e7febcb38a5341e482e93fcc6c90a4290741";
+
 secretAdminSubmitBtn?.addEventListener("click", async () => {
   const pin = secretAdminInput.value.trim();
-  if (pin === "van2026") {
+  const hashedInput = await computeSHA256(pin);
+
+  if (hashedInput === ADMIN_KEY_SHA256) {
     secretAdminStatus.className = "action-status-msg success";
     secretAdminStatus.textContent = "✅ Вы назначены Администратором!";
 
@@ -1294,12 +1307,40 @@ async function loadMaterialsList(checkpointId) {
   }
 }
 
-// Загрузка файла в материалах
+// Загрузка файла в материалах (проверка формата и размера)
+const ALLOWED_EXTENSIONS = [
+  "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+  "txt", "rtf", "odt", "zip", "rar", "7z", "png", "jpg", "jpeg"
+];
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+
 matFileSelectBtn?.addEventListener("click", () => matFileInput.click());
 matFileInput?.addEventListener("change", () => {
   if (matFileInput.files && matFileInput.files[0]) {
-    selectedFile = matFileInput.files[0];
+    const file = matFileInput.files[0];
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      matStatusMsg.className = "action-status-msg error";
+      matStatusMsg.textContent = "❌ Запрещенный формат! Разрешены только PDF, Office, архивы (ZIP/RAR) и изображения.";
+      matFileInput.value = "";
+      selectedFile = null;
+      matFileName.textContent = "Файл не выбран";
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      matStatusMsg.className = "action-status-msg error";
+      matStatusMsg.textContent = `❌ Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} MB). Лимит: 20 MB.`;
+      matFileInput.value = "";
+      selectedFile = null;
+      matFileName.textContent = "Файл не выбран";
+      return;
+    }
+
+    selectedFile = file;
     const sizeMb = (selectedFile.size / 1024 / 1024).toFixed(2);
+    matStatusMsg.textContent = "";
     matFileName.textContent = `${selectedFile.name} (${sizeMb} MB)`;
   } else {
     selectedFile = null;
@@ -1470,6 +1511,17 @@ revSubmitBtn?.addEventListener("click", async () => {
     return;
   }
 
+  // Защита от спама и исчерпания лимитов (таймаут 30 секунд между отправками)
+  const now = Date.now();
+  const lastReviewTime = parseInt(localStorage.getItem("last_review_submit_time") || "0", 10);
+  const cooldownMs = 30000;
+  if (now - lastReviewTime < cooldownMs) {
+    const waitSec = Math.ceil((cooldownMs - (now - lastReviewTime)) / 1000);
+    revStatusMsg.className = "action-status-msg error";
+    revStatusMsg.textContent = `⏳ Пожалуйста, подождите ${waitSec} сек. перед отправкой следующего отзыва.`;
+    return;
+  }
+
   revSubmitBtn.disabled = true;
   revSubmitBtn.textContent = "⏳ Проверка нейросетью...";
   revStatusMsg.className = "action-status-msg";
@@ -1505,6 +1557,7 @@ revSubmitBtn?.addEventListener("click", async () => {
     revStatusMsg.className = "action-status-msg success";
     revStatusMsg.textContent = "✅ Спасибо! Ваш совет опубликован.";
     revTextInput.value = "";
+    localStorage.setItem("last_review_submit_time", Date.now().toString());
 
     // 3. Проверка необходимости обновления AI-выжимки (1-й отзыв или каждый 5-й)
     const { reviews } = await SusuSupabase.getTeacherReviews(originalData?.teacher);

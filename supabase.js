@@ -400,6 +400,24 @@ const SusuSupabase = {
         console.warn("Failed to delete file from storage:", storageErr);
       }
     }
+  },
+
+  // 10. Глобальные настройки приложения и API-ключи (app_config)
+  async getConfig(key) {
+    try {
+      const res = await this.request(`app_config?key=eq.${encodeURIComponent(key)}&select=value`);
+      return res && res.length > 0 ? res[0].value : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveConfig(key, value) {
+    return await this.request("app_config?on_conflict=key", {
+      method: "POST",
+      headers: { "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify([{ key, value }])
+    });
   }
 };
 

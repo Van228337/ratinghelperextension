@@ -8,7 +8,7 @@ chrome.runtime.onInstalled.addListener(async () => {
       if (tab.id) {
         chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ["contentScript.js"],
+          files: ["supabase.js", "contentScript.js"],
         }).catch(() => {});
       }
     }
@@ -22,7 +22,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.url && changeInfo.url.includes("online.susu.ru")) {
     chrome.scripting.executeScript({
       target: { tabId },
-      files: ["contentScript.js"],
+      files: ["supabase.js", "contentScript.js"],
     }).catch(() => {});
   }
 });
