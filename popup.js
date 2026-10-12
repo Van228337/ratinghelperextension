@@ -7,6 +7,7 @@ const dashboardView = document.getElementById("dashboard-view");
 const infoView = document.getElementById("info-view");
 
 const subjectEl = document.getElementById("subject");
+const subjectTeacherEl = document.getElementById("subject-teacher");
 const pointsContainer = document.getElementById("points-container");
 const resultEl = document.getElementById("result");
 const bonusSection = document.getElementById("bonus-section");
@@ -477,13 +478,15 @@ function checkExistingDraft(subjectName) {
 }
 
 // Сохраняем предмет в общую историю для дашборда семестра (Фича 7)
-function saveSubjectToSemesterHistory(subjectName, rating) {
+function saveSubjectToSemesterHistory(subjectName, rating, teacher, subjectId) {
   const clean = cleanSubjectName(subjectName);
   if (!clean || clean === "Без названия") return;
   chrome.storage.local.get("semester_subjects", (res) => {
     const list = res.semester_subjects || {};
     list[clean] = {
       name: clean,
+      teacher: teacher || list[clean]?.teacher || "",
+      subjectId: subjectId || list[clean]?.subjectId || null,
       rating: parseFloat(rating.toFixed(2)),
       updatedAt: Date.now()
     };
@@ -508,6 +511,8 @@ function renderDashboardScreen() {
       if (!cleanMap[clean] || (s.updatedAt || 0) >= (cleanMap[clean].updatedAt || 0)) {
         cleanMap[clean] = {
           name: clean,
+          teacher: s.teacher || "",
+          subjectId: s.subjectId || null,
           rating: s.rating,
           updatedAt: s.updatedAt || Date.now()
         };
@@ -552,7 +557,7 @@ function renderDashboardScreen() {
 
       const nameEl = document.createElement("div");
       nameEl.className = "dashboard-sub-name";
-      nameEl.textContent = s.name;
+      nameEl.innerHTML = `<div>${s.name}</div>${s.teacher ? `<div class="dashboard-sub-teacher">👨‍🏫 ${s.teacher}</div>` : ""}`;
 
       const rightEl = document.createElement("div");
       rightEl.className = "dashboard-sub-right";
@@ -671,22 +676,31 @@ async function loadData() {
     if (response && response.entries && response.entries.length > 0) {
       response.subject = cleanSubjectName(response.subject);
       originalData = response;
+      if (response.teacher && subjectTeacherEl) {
+        subjectTeacherEl.textContent = `👨‍🏫 ${response.teacher}`;
+        subjectTeacherEl.style.display = "block";
+      } else if (subjectTeacherEl) {
+        subjectTeacherEl.style.display = "none";
+      }
       currentScores = originalData.entries.map((e) => e.current);
       bonusSection.style.display = "flex";
       applySettingsToUI();
       render();
       checkExistingDraft(originalData.subject);
     } else if (response && response.notInSubject) {
+      if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
       subjectEl.textContent = "Выберите предмет";
       resultEl.textContent = "Перейдите в журнал предмета";
       pointsContainer.innerHTML = "";
       applySettingsToUI();
     } else if (response && response.subject && response.subject !== "Без названия") {
+      if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
       subjectEl.textContent = cleanSubjectName(response.subject);
       resultEl.textContent = "Контрольные точки не найдены";
       pointsContainer.innerHTML = "";
       applySettingsToUI();
     } else {
+      if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
       subjectEl.textContent = "Выберите предмет";
       resultEl.textContent = "Перейдите в журнал предмета";
       pointsContainer.innerHTML = "";
@@ -694,6 +708,7 @@ async function loadData() {
     }
   } catch (error) {
     console.error("Ошибка при получении данных:", error);
+    if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
     subjectEl.textContent = "❌ Ошибка";
     applySettingsToUI();
   }
@@ -853,5 +868,10 @@ function updateRating() {
   }
 
   // Сохраняем чистый предмет в историю семестра (Фича 7)
-  saveSubjectToSemesterHistory(originalData.subject, finalRating);
+  saveSubjectToSemesterHistory(
+    originalData.subject,
+    finalRating,
+    originalData.teacher,
+    originalData.subjectId
+  );
 }

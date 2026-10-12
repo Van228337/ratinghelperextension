@@ -10,6 +10,14 @@ function isSubjectPage() {
   );
 }
 
+function getSubjectIdFromUrl() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  if (parts[0] === "study-activity" && parts[1] === "journal" && parts.length >= 3 && parts[2] !== "term") {
+    return parts[2];
+  }
+  return null;
+}
+
 // Извлечение чистого названия предмета БЕЗ виджетов и артефактов
 function getCleanSubjectName() {
   const disciplineEl = document.querySelector(".discipline-name");
@@ -20,8 +28,53 @@ function getCleanSubjectName() {
   return text.replace(/[🎓⚡].*$/, "").replace(/Рейтинг:.*$/, "").trim();
 }
 
+// Сканирование карточек на странице общего списка дисциплин
+function scanOverviewPage() {
+  const cards = document.querySelectorAll(".card-data");
+  if (!cards || cards.length === 0) return;
+
+  chrome.storage.local.get("subjects_meta", (res) => {
+    const meta = res.subjects_meta || {};
+    let changed = false;
+
+    cards.forEach((card) => {
+      const nameEl = card.querySelector(".discipline-name");
+      const teacherEl = card.querySelector("p");
+      const name = nameEl?.innerText.trim();
+      const teacher = teacherEl?.innerText.trim();
+
+      // Ищем ссылку на страницу журнала с UUID предмета
+      const a = card.closest("a") || card.parentElement?.querySelector("a") || card.querySelector("a");
+      const href = a?.getAttribute("href") || a?.href || "";
+      const uuidMatch = href.match(/journal\/([0-9a-f-]{36})/i);
+      const subjectId = uuidMatch ? uuidMatch[1] : null;
+
+      if (name) {
+        const existing = meta[name] || {};
+        if (existing.teacher !== teacher || (subjectId && existing.subjectId !== subjectId)) {
+          meta[name] = {
+            ...existing,
+            subjectName: name,
+            ...(teacher ? { teacher } : {}),
+            ...(subjectId ? { subjectId } : {})
+          };
+          if (subjectId) {
+            meta[subjectId] = meta[name];
+          }
+          changed = true;
+        }
+      }
+    });
+
+    if (changed) {
+      chrome.storage.local.set({ subjects_meta: meta });
+    }
+  });
+}
+
 function parsePage() {
   const subject = getCleanSubjectName();
+  const subjectId = getSubjectIdFromUrl();
   const entries = [];
   let inCurrent = false;
 
@@ -76,7 +129,7 @@ function parsePage() {
     });
   });
 
-  return { subject, entries };
+  return { subject, subjectId, entries };
 }
 
 function waitForJournal(timeout = 3000) {
@@ -180,6 +233,10 @@ function injectInlineStyles() {
       font-size: 13px;
       color: ${isDark ? "#60a5fa !important" : "#2563eb !important"};
     }
+    .susu-widget-teacher-tag {
+      font-size: 12px;
+      color: ${isDark ? "#cbd5e1 !important" : "#64748b !important"};
+    }
     .susu-stat-item {
       display: inline-flex;
       align-items: baseline;
@@ -218,7 +275,7 @@ function renderInlineWidget() {
     return;
   }
 
-  chrome.storage.local.get("settings", (res) => {
+  chrome.storage.local.get(["settings", "subjects_meta"], (res) => {
     const settings = res.settings || {};
     if (settings.inlineWidget === false) {
       const existing = document.getElementById("susu-rating-inline-widget");
@@ -228,6 +285,10 @@ function renderInlineWidget() {
 
     const data = parsePage();
     if (!data || !data.entries || data.entries.length === 0) return;
+
+    const meta = res.subjects_meta || {};
+    const metaInfo = (data.subjectId && meta[data.subjectId]) || (data.subject && meta[data.subject]) || {};
+    const teacherName = metaInfo.teacher || "";
 
     let total = 0, totalWeight = 0;
     let lockedTotal = 0;
@@ -258,6 +319,8 @@ function renderInlineWidget() {
         const list = subRes.semester_subjects || {};
         list[cleanName] = {
           name: cleanName,
+          teacher: teacherName,
+          subjectId: data.subjectId || null,
           rating: parseFloat(rating.toFixed(2)),
           updatedAt: Date.now()
         };
@@ -304,10 +367,12 @@ function renderInlineWidget() {
 
     const pillBg = isDark ? grade.badgeBg : grade.lightBg;
     const pillColor = isDark ? grade.badgeText : grade.lightText;
+    const teacherHtml = teacherName ? `<span class="susu-widget-teacher-tag">👨‍🏫 ${teacherName}</span>` : "";
 
     widget.innerHTML = `
       <div class="susu-widget-left">
         <span class="susu-widget-title-tag">⚡ БРС Калькулятор:</span>
+        ${teacherHtml}
         <span class="susu-stat-item">Текущий: <strong>${rating.toFixed(2)}%</strong></span>
         <span class="susu-grade-pill-tag" style="background:${pillBg} !important; color:${pillColor} !important;">
           ${grade.label}
@@ -319,20 +384,26 @@ function renderInlineWidget() {
   });
 }
 
-// Запуск отрисовки виджета
+// Запуск при загрузке страницы
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(renderInlineWidget, 500);
+    if (isSubjectPage()) setTimeout(renderInlineWidget, 500);
+    else setTimeout(scanOverviewPage, 500);
   });
 } else {
-  setTimeout(renderInlineWidget, 500);
+  if (isSubjectPage()) setTimeout(renderInlineWidget, 500);
+  else setTimeout(scanOverviewPage, 500);
 }
 
-// Отслеживание изменений DOM (для SPA)
+// Отслеживание изменений DOM (для SPA-навигации)
 const observer = new MutationObserver(() => {
-  if (isSubjectPage() && !document.getElementById("susu-rating-inline-widget")) {
-    const table = document.querySelector("table.journal-table");
-    if (table) renderInlineWidget();
+  if (isSubjectPage()) {
+    if (!document.getElementById("susu-rating-inline-widget")) {
+      const table = document.querySelector("table.journal-table");
+      if (table) renderInlineWidget();
+    }
+  } else {
+    scanOverviewPage();
   }
 });
 observer.observe(document.body, { childList: true, subtree: true });
@@ -344,8 +415,26 @@ if (!window.__susuRatingHelperInjected) {
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg === "getData") {
       waitForJournal().then((data) => {
-        renderInlineWidget();
-        sendResponse(data);
+        chrome.storage.local.get("subjects_meta", (res) => {
+          const meta = res.subjects_meta || {};
+          const info = (data.subjectId && meta[data.subjectId]) || (data.subject && meta[data.subject]) || {};
+          data.teacher = info.teacher || "";
+
+          // Привязываем ID предмета и название
+          if (data.subjectId && data.subject) {
+            meta[data.subject] = {
+              ...(meta[data.subject] || {}),
+              subjectId: data.subjectId,
+              subjectName: data.subject,
+              ...(data.teacher ? { teacher: data.teacher } : {})
+            };
+            meta[data.subjectId] = meta[data.subject];
+            chrome.storage.local.set({ subjects_meta: meta });
+          }
+
+          renderInlineWidget();
+          sendResponse(data);
+        });
       });
       return true;
     }
