@@ -17,6 +17,7 @@
         </button>
       </div>
       <div class="header-right">
+        <button id="admin-btn" class="icon-btn" title="Панель администратора" style="display: none;">🛡️</button>
         <button id="dashboard-btn" class="icon-btn" title="Сводка семестра">
           <img class="icon-svg" src="icons-light/dashboard.svg" alt="Сводка">
         </button>
@@ -329,6 +330,9 @@
       <code>Итог = Текущий × 0.6 + Экзамен × 0.4 + Бонус</code></p>
       <p>Вы можете редактировать баллы по каждой работе и настраивать отображение функций в меню настроек ⚙️.</p>
       <button id="external-link-btn" class="info-link-btn">Открыть сайт ЮУрГУ</button>
+      <div class="version-footer">
+        <span id="app-version-badge" class="version-badge">v1.2.0 • Rating Helper</span>
+      </div>
     </div>
   </div>
 
@@ -393,6 +397,15 @@
         <div id="reviews-subject-name" class="reviews-subject-name"></div>
       </div>
       <div style="width: 32px;"></div>
+    </div>
+
+    <!-- Карточка AI-выжимки о преподавателе (от Groq) -->
+    <div id="ai-summary-card" class="card ai-summary-card" style="display: none;">
+      <div class="ai-summary-header">
+        <span class="ai-summary-title">✨ AI-Выжимка от нейросети</span>
+        <span id="ai-summary-count-badge" class="ai-summary-badge">на основе отзывов</span>
+      </div>
+      <div id="ai-summary-text" class="ai-summary-text"></div>
     </div>
 
     <!-- Сводная статистика преподавателя -->
@@ -465,6 +478,62 @@
     </div>
   </div>
 
+  <!-- ЭКРАН АДМИН-ПАНЕЛИ -->
+  <div id="admin-view" style="display: none;">
+    <div class="header">
+      <button id="back-from-admin-btn" class="icon-btn">
+        <img class="icon-svg" src="icons-light/arrow-left.svg" alt="←">
+      </button>
+      <h2>🛡️ Панель управления</h2>
+      <button id="admin-refresh-btn" class="icon-btn" title="Обновить">🔄</button>
+    </div>
+
+    <div class="admin-tabs">
+      <button class="admin-tab-btn active" data-tab="users">👥 Студенты</button>
+      <button class="admin-tab-btn" data-tab="reviews">💬 Отзывы</button>
+      <button class="admin-tab-btn" data-tab="materials">📎 Работы</button>
+    </div>
+
+    <!-- Вкладка 1: Пользователи и доступ -->
+    <div id="admin-tab-users" class="admin-tab-content">
+      <div class="admin-section-hint">Управление правами доступа к материалам и банами.</div>
+      <div id="admin-users-list" class="admin-items-list">
+        <div class="empty-state">Загрузка пользователей...</div>
+      </div>
+    </div>
+
+    <!-- Вкладка 2: Отзывы -->
+    <div id="admin-tab-reviews" class="admin-tab-content" style="display: none;">
+      <div class="admin-section-hint">Модерация, удаление отзывов и пересчет AI-выжимки.</div>
+      <div id="admin-reviews-list" class="admin-items-list">
+        <div class="empty-state">Загрузка отзывов...</div>
+      </div>
+    </div>
+
+    <!-- Вкладка 3: Материалы и файлы -->
+    <div id="admin-tab-materials" class="admin-tab-content" style="display: none;">
+      <div class="admin-section-hint">Удаление файлов из базы и облачного хранилища.</div>
+      <div id="admin-materials-list" class="admin-items-list">
+        <div class="empty-state">Загрузка файлов...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Секретный диалог ввода кода доступа админа (5 кликов по версии) -->
+  <div id="secret-admin-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-title">Вход администратора</div>
+      <div class="modal-sub">Ваш UUID: <span id="admin-my-uuid" class="admin-uuid-text"></span></div>
+      <input type="password" id="secret-admin-input" class="mat-input" placeholder="Введите ключ доступа">
+      <div id="secret-admin-status" class="action-status-msg"></div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button id="secret-admin-submit-btn" class="action-submit-btn" style="flex: 2;">Подтвердить</button>
+        <button id="secret-admin-cancel-btn" class="secondary-btn" style="flex: 1;">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="groq.js"></script>
   <script src="supabase.js"></script>
   <script src="popup.js"></script>
 </body>

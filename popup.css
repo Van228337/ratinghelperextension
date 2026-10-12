@@ -1025,3 +1025,205 @@ body {
   opacity: 0.6;
   padding: 16px 8px;
 }
+
+/* === КАРТОЧКА AI-ВЫЖИМКИ ОТ НЕЙРОСЕТИ === */
+.ai-summary-card {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(147, 51, 234, 0.12));
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.ai-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.ai-summary-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3b82f6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-summary-badge {
+  font-size: 9px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.ai-summary-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-line;
+}
+
+/* === АДМИН-ПАНЕЛЬ === */
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.admin-tab-btn {
+  flex: 1;
+  padding: 5px 2px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.admin-tab-btn.active {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+.admin-section-hint {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+
+.admin-items-list {
+  max-height: 380px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.admin-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.admin-uuid-text {
+  font-family: monospace;
+  font-size: 10px;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+.admin-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-mini-btn {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.admin-mini-btn.danger {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.admin-mini-btn.danger:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+.admin-mini-btn.active {
+  background: #22c55e;
+  color: #fff;
+  border-color: #22c55e;
+}
+
+/* Секретный диалог */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 16px;
+}
+
+.modal-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 14px;
+  width: 100%;
+  max-width: 280px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+}
+
+.modal-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.modal-sub {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+
+.version-footer {
+  text-align: center;
+  margin-top: 16px;
+}
+
+.version-badge {
+  font-size: 10px;
+  opacity: 0.5;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.version-badge:hover {
+  opacity: 0.8;
+  background: var(--input-bg);
+}

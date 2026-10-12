@@ -7,6 +7,7 @@ const dashboardView = document.getElementById("dashboard-view");
 const infoView = document.getElementById("info-view");
 const materialsView = document.getElementById("materials-view");
 const reviewsView = document.getElementById("reviews-view");
+const adminView = document.getElementById("admin-view");
 
 const subjectEl = document.getElementById("subject");
 const subjectTeacherEl = document.getElementById("subject-teacher");
@@ -18,6 +19,7 @@ const bonusSection = document.getElementById("bonus-section");
 const bonusInput = document.getElementById("bonus-input");
 
 // Кнопки в шапке
+const adminBtn = document.getElementById("admin-btn");
 const dashboardBtn = document.getElementById("dashboard-btn");
 const settingsBtn = document.getElementById("settings-btn");
 const infoBtn = document.getElementById("info-btn");
@@ -29,6 +31,31 @@ const backFromSettingsBtn = document.getElementById("back-from-settings-btn");
 const backFromDashboardBtn = document.getElementById("back-from-dashboard-btn");
 const backFromMaterialsBtn = document.getElementById("back-from-materials-btn");
 const backFromReviewsBtn = document.getElementById("back-from-reviews-btn");
+const backFromAdminBtn = document.getElementById("back-from-admin-btn");
+const adminRefreshBtn = document.getElementById("admin-refresh-btn");
+
+// Админка
+const adminTabBtns = document.querySelectorAll(".admin-tab-btn");
+const adminTabUsers = document.getElementById("admin-tab-users");
+const adminTabReviews = document.getElementById("admin-tab-reviews");
+const adminTabMaterials = document.getElementById("admin-tab-materials");
+const adminUsersList = document.getElementById("admin-users-list");
+const adminReviewsList = document.getElementById("admin-reviews-list");
+const adminMaterialsList = document.getElementById("admin-materials-list");
+
+// Секретный диалог
+const secretAdminModal = document.getElementById("secret-admin-modal");
+const adminMyUuid = document.getElementById("admin-my-uuid");
+const secretAdminInput = document.getElementById("secret-admin-input");
+const secretAdminStatus = document.getElementById("secret-admin-status");
+const secretAdminSubmitBtn = document.getElementById("secret-admin-submit-btn");
+const secretAdminCancelBtn = document.getElementById("secret-admin-cancel-btn");
+const appVersionBadge = document.getElementById("app-version-badge");
+
+// AI-Сводка
+const aiSummaryCard = document.getElementById("ai-summary-card");
+const aiSummaryCountBadge = document.getElementById("ai-summary-count-badge");
+const aiSummaryText = document.getElementById("ai-summary-text");
 
 // Материалы
 const materialsCheckpointTitle = document.getElementById("materials-checkpoint-title");
@@ -170,6 +197,7 @@ function showView(view) {
   infoView.style.display = "none";
   materialsView.style.display = "none";
   reviewsView.style.display = "none";
+  adminView.style.display = "none";
   view.style.display = "block";
 }
 
@@ -189,13 +217,106 @@ backFromSettingsBtn.addEventListener("click", () => showView(mainView));
 backFromDashboardBtn.addEventListener("click", () => showView(mainView));
 backFromMaterialsBtn?.addEventListener("click", () => showView(mainView));
 backFromReviewsBtn?.addEventListener("click", () => showView(mainView));
+backFromAdminBtn?.addEventListener("click", () => showView(mainView));
 
 teacherReviewsBtn?.addEventListener("click", () => openReviewsScreen());
+adminBtn?.addEventListener("click", () => openAdminScreen());
+
+adminRefreshBtn?.addEventListener("click", () => {
+  const activeTab = document.querySelector(".admin-tab-btn.active")?.dataset.tab || "users";
+  switchAdminTab(activeTab);
+});
+
+// Секретный вход по 5 кликам по версии
+appVersionBadge?.addEventListener("click", () => {
+  versionClickCount++;
+  clearTimeout(versionClickTimeout);
+  versionClickTimeout = setTimeout(() => {
+    versionClickCount = 0;
+  }, 3000);
+
+  if (versionClickCount >= 5) {
+    versionClickCount = 0;
+    if (adminMyUuid) adminMyUuid.textContent = myUserId || "не определен";
+    if (secretAdminInput) secretAdminInput.value = "";
+    if (secretAdminStatus) secretAdminStatus.textContent = "";
+    if (secretAdminModal) secretAdminModal.style.display = "flex";
+  }
+});
+
+secretAdminCancelBtn?.addEventListener("click", () => {
+  if (secretAdminModal) secretAdminModal.style.display = "none";
+});
+
+secretAdminSubmitBtn?.addEventListener("click", async () => {
+  const pin = secretAdminInput.value.trim();
+  if (pin === "van2026") {
+    secretAdminStatus.className = "action-status-msg success";
+    secretAdminStatus.textContent = "✅ Вы назначены Администратором!";
+
+    myUserProfile.is_admin = true;
+    myUserProfile.can_view_materials = true;
+    chrome.storage.local.set({ is_admin: true });
+
+    if (typeof SusuSupabase !== "undefined" && myUserId) {
+      SusuSupabase.updateUser(myUserId, { is_admin: true, can_view_materials: true }).catch(() => {});
+    }
+
+    applySettingsToUI();
+
+    setTimeout(() => {
+      if (secretAdminModal) secretAdminModal.style.display = "none";
+      openAdminScreen();
+    }, 700);
+  } else {
+    secretAdminStatus.className = "action-status-msg error";
+    secretAdminStatus.textContent = "❌ Неверный ключ доступа.";
+  }
+});
 
 const externalLinkBtn = document.getElementById("external-link-btn");
 externalLinkBtn?.addEventListener("click", () => {
   chrome.tabs.create({ url: "https://online.susu.ru" });
 });
+
+// === СЕССИЯ ПОЛЬЗОВАТЕЛЯ И ПРАВА ДОСТУПА ===
+async function initUserSession() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["user_id", "is_admin"], async (res) => {
+      if (res && res.user_id) {
+        myUserId = res.user_id;
+      } else {
+        myUserId = crypto.randomUUID();
+        chrome.storage.local.set({ user_id: myUserId });
+      }
+
+      const localIsAdmin = !!(res && res.is_admin);
+
+      try {
+        if (typeof SusuSupabase !== "undefined") {
+          const profile = await SusuSupabase.getUserProfile(myUserId);
+          myUserProfile = {
+            ...profile,
+            is_admin: profile.is_admin || localIsAdmin
+          };
+          if (profile.is_admin || localIsAdmin) {
+            chrome.storage.local.set({ is_admin: true });
+          }
+        }
+      } catch (err) {
+        myUserProfile = {
+          user_id: myUserId,
+          is_banned: false,
+          can_view_materials: true,
+          is_admin: localIsAdmin
+        };
+      }
+
+      applySettingsToUI();
+      resolve(myUserProfile);
+    });
+  });
+}
 
 // === УПРАВЛЕНИЕ НАСТРОЙКАМИ ===
 function loadSettings() {
@@ -219,6 +340,21 @@ function saveSettings() {
 
 function applySettingsToUI() {
   const hasData = originalData && originalData.entries && originalData.entries.length > 0;
+
+  // Контроль видимости базы материалов для конкретных пользователей
+  if (!myUserProfile.can_view_materials) {
+    currentSettings.communityMaterials = false;
+  }
+
+  const matSettingItem = settingsView.querySelector("input[data-setting='communityMaterials']")?.closest(".setting-item");
+  if (matSettingItem) {
+    matSettingItem.style.display = myUserProfile.can_view_materials ? "flex" : "none";
+  }
+
+  // Кнопка панели администратора в шапке (СТРОГО скрыта от всех, кроме админа)
+  if (adminBtn) {
+    adminBtn.style.display = myUserProfile.is_admin ? "inline-flex" : "none";
+  }
 
   gradeCard.style.display = (hasData && currentSettings.academicGrade) ? "block" : "none";
   rangeCard.style.display = (hasData && currentSettings.rangeForecast) ? "flex" : "none";
@@ -675,6 +811,7 @@ function isSubjectPageUrl(urlStr) {
 
 // === ЗАГРУЗКА ДАННЫХ ===
 async function loadData() {
+  await initUserSession();
   await loadSettings();
 
   try {
@@ -1215,6 +1352,16 @@ async function loadTeacherReviewsList(teacherName) {
   if (!teacherName || typeof SusuSupabase === "undefined") return;
   reviewsList.innerHTML = `<div class="empty-state">Загрузка отзывов...</div>`;
   try {
+    // 1. Подтягиваем кэшированную AI-выжимку от нейросети
+    const summary = await SusuSupabase.getTeacherSummary(teacherName);
+    if (summary && summary.summary_text && aiSummaryCard) {
+      aiSummaryCard.style.display = "block";
+      aiSummaryCountBadge.textContent = `на основе ${summary.reviews_count || 1} отзывов`;
+      aiSummaryText.textContent = summary.summary_text;
+    } else if (aiSummaryCard) {
+      aiSummaryCard.style.display = "none";
+    }
+
     const { reviews, stats } = await SusuSupabase.getTeacherReviews(teacherName);
     reviewsTotalCount.textContent = reviews.length;
     reviewsList.innerHTML = "";
@@ -1275,6 +1422,12 @@ async function loadTeacherReviewsList(teacherName) {
 }
 
 revSubmitBtn?.addEventListener("click", async () => {
+  if (myUserProfile.is_banned) {
+    revStatusMsg.className = "action-status-msg error";
+    revStatusMsg.textContent = "Ваш аккаунт заблокирован администратором.";
+    return;
+  }
+
   const text = revTextInput.value.trim();
   if (!text) {
     revStatusMsg.className = "action-status-msg error";
@@ -1283,11 +1436,26 @@ revSubmitBtn?.addEventListener("click", async () => {
   }
 
   revSubmitBtn.disabled = true;
-  revSubmitBtn.textContent = "⏳ Отправка...";
+  revSubmitBtn.textContent = "⏳ Проверка нейросетью...";
   revStatusMsg.className = "action-status-msg";
   revStatusMsg.textContent = "";
 
   try {
+    // 1. Модерация через Groq (Llama / Qwen)
+    if (typeof SusuGroq !== "undefined") {
+      const modResult = await SusuGroq.moderateReview(text);
+      if (!modResult.allowed) {
+        revSubmitBtn.disabled = false;
+        revSubmitBtn.textContent = "💬 Опубликовать совет";
+        revStatusMsg.className = "action-status-msg error";
+        revStatusMsg.textContent = `❌ Модерация не пройдена: ${modResult.reason}`;
+        return;
+      }
+    }
+
+    revSubmitBtn.textContent = "⏳ Сохранение в базу...";
+
+    // 2. Добавление отзыва в Supabase
     await SusuSupabase.addTeacherReview({
       teacherName: originalData?.teacher,
       subjectId: originalData?.subjectId,
@@ -1300,14 +1468,26 @@ revSubmitBtn?.addEventListener("click", async () => {
     });
 
     revStatusMsg.className = "action-status-msg success";
-    revStatusMsg.textContent = "✅ Спасибо! Ваш совет сохранён.";
+    revStatusMsg.textContent = "✅ Спасибо! Ваш совет опубликован.";
     revTextInput.value = "";
+
+    // 3. Проверка необходимости обновления AI-выжимки (1-й отзыв или каждый 5-й)
+    const { reviews } = await SusuSupabase.getTeacherReviews(originalData?.teacher);
+    const count = reviews ? reviews.length : 1;
+
+    if (typeof SusuGroq !== "undefined" && (count === 1 || count % 5 === 0)) {
+      revSubmitBtn.textContent = "✨ Генерация AI-выжимки...";
+      const newSummary = await SusuGroq.generateTeacherSummary(originalData?.teacher, reviews);
+      if (newSummary) {
+        await SusuSupabase.saveTeacherSummary(originalData?.teacher, newSummary, count);
+      }
+    }
 
     await loadTeacherReviewsList(originalData?.teacher);
 
     // Обновляем бейдж счетчика в шапке
-    const count = parseInt(teacherReviewsCount.textContent, 10) || 0;
-    teacherReviewsCount.textContent = count + 1;
+    const headerCount = parseInt(teacherReviewsCount.textContent, 10) || 0;
+    teacherReviewsCount.textContent = headerCount + 1;
     teacherReviewsCount.style.display = "inline-block";
   } catch (err) {
     revStatusMsg.className = "action-status-msg error";
@@ -1317,3 +1497,201 @@ revSubmitBtn?.addEventListener("click", async () => {
     revSubmitBtn.textContent = "💬 Опубликовать совет";
   }
 });
+
+// === АДМИН-ПАНЕЛЬ (ФУНКЦИОНАЛ ДЛЯ ВАЙТЛИСТА) ===
+async function openAdminScreen() {
+  if (!myUserProfile.is_admin) return;
+  showView(adminView);
+  const activeTab = document.querySelector(".admin-tab-btn.active")?.dataset.tab || "users";
+  switchAdminTab(activeTab);
+}
+
+adminTabBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    adminTabBtns.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    switchAdminTab(btn.dataset.tab);
+  });
+});
+
+function switchAdminTab(tabName) {
+  if (adminTabUsers) adminTabUsers.style.display = tabName === "users" ? "block" : "none";
+  if (adminTabReviews) adminTabReviews.style.display = tabName === "reviews" ? "block" : "none";
+  if (adminTabMaterials) adminTabMaterials.style.display = tabName === "materials" ? "block" : "none";
+
+  if (tabName === "users") renderAdminUsers();
+  else if (tabName === "reviews") renderAdminReviews();
+  else if (tabName === "materials") renderAdminMaterials();
+}
+
+async function renderAdminUsers() {
+  if (!adminUsersList) return;
+  adminUsersList.innerHTML = `<div class="empty-state">Загрузка пользователей...</div>`;
+  try {
+    const users = await SusuSupabase.getAllUsers();
+    adminUsersList.innerHTML = "";
+    if (users.length === 0) {
+      adminUsersList.innerHTML = `<div class="empty-state">Пользователи еще не зарегистрированы в базе.</div>`;
+      return;
+    }
+
+    users.forEach((u) => {
+      const card = document.createElement("div");
+      card.className = "admin-card";
+
+      const isMe = u.user_id === myUserId;
+      const header = document.createElement("div");
+      header.className = "admin-card-header";
+      header.innerHTML = `<span>👤 Студент ${isMe ? '<strong style="color:#22c55e;">(Вы)</strong>' : ''}</span><span style="font-size:10px; opacity:0.6;">${new Date(u.last_active).toLocaleDateString()}</span>`;
+
+      const uuidDiv = document.createElement("div");
+      uuidDiv.className = "admin-uuid-text";
+      uuidDiv.textContent = u.user_id;
+
+      const actions = document.createElement("div");
+      actions.className = "admin-actions-row";
+
+      // 1. Тумблер видимости материалов для студента
+      const matBtn = document.createElement("button");
+      matBtn.className = `admin-mini-btn ${u.can_view_materials ? 'active' : 'danger'}`;
+      matBtn.textContent = u.can_view_materials ? "👀 Работы: ВКЛ" : "🙈 Работы: СКРЫТЫ";
+      matBtn.title = "Включить/скрыть доступ к базе работ и скрепкам для этого UUID";
+      matBtn.addEventListener("click", async () => {
+        const newVal = !u.can_view_materials;
+        await SusuSupabase.updateUser(u.user_id, { can_view_materials: newVal });
+        u.can_view_materials = newVal;
+        matBtn.className = `admin-mini-btn ${u.can_view_materials ? 'active' : 'danger'}`;
+        matBtn.textContent = u.can_view_materials ? "👀 Работы: ВКЛ" : "🙈 Работы: СКРЫТЫ";
+      });
+
+      // 2. Тумблер бана
+      const banBtn = document.createElement("button");
+      banBtn.className = `admin-mini-btn ${u.is_banned ? 'danger' : ''}`;
+      banBtn.textContent = u.is_banned ? "🚫 Забанен" : "✅ Активен";
+      banBtn.addEventListener("click", async () => {
+        const newVal = !u.is_banned;
+        await SusuSupabase.updateUser(u.user_id, { is_banned: newVal });
+        u.is_banned = newVal;
+        banBtn.className = `admin-mini-btn ${u.is_banned ? 'danger' : ''}`;
+        banBtn.textContent = u.is_banned ? "🚫 Забанен" : "✅ Активен";
+      });
+
+      // 3. Тумблер админа
+      const admBtn = document.createElement("button");
+      admBtn.className = `admin-mini-btn ${u.is_admin ? 'active' : ''}`;
+      admBtn.textContent = u.is_admin ? "👑 Админ" : "Юзер";
+      admBtn.title = "Выдать или отозвать права администратора";
+      admBtn.addEventListener("click", async () => {
+        const newVal = !u.is_admin;
+        await SusuSupabase.updateUser(u.user_id, { is_admin: newVal });
+        u.is_admin = newVal;
+        admBtn.className = `admin-mini-btn ${u.is_admin ? 'active' : ''}`;
+        admBtn.textContent = u.is_admin ? "👑 Админ" : "Юзер";
+      });
+
+      actions.append(matBtn, banBtn, admBtn);
+      card.append(header, uuidDiv, actions);
+      adminUsersList.appendChild(card);
+    });
+  } catch (e) {
+    adminUsersList.innerHTML = `<div class="empty-state">Ошибка: ${e.message}</div>`;
+  }
+}
+
+async function renderAdminReviews() {
+  if (!adminReviewsList) return;
+  adminReviewsList.innerHTML = `<div class="empty-state">Загрузка отзывов...</div>`;
+  try {
+    const reviews = await SusuSupabase.getAllReviews();
+    adminReviewsList.innerHTML = "";
+    if (reviews.length === 0) {
+      adminReviewsList.innerHTML = `<div class="empty-state">Отзывов пока нет.</div>`;
+      return;
+    }
+
+    reviews.forEach((r) => {
+      const card = document.createElement("div");
+      card.className = "admin-card";
+
+      const header = document.createElement("div");
+      header.className = "admin-card-header";
+      header.innerHTML = `<span>👨‍🏫 ${r.teacher_name}</span><span style="font-size:10px; opacity:0.6;">${r.year} г.</span>`;
+
+      const body = document.createElement("div");
+      body.style.fontSize = "11px";
+      body.style.lineHeight = "1.35";
+      body.textContent = r.text;
+
+      const actions = document.createElement("div");
+      actions.className = "admin-actions-row";
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "admin-mini-btn danger";
+      delBtn.textContent = "🗑️ Удалить";
+      delBtn.addEventListener("click", async () => {
+        if (confirm("Удалить этот отзыв?")) {
+          await SusuSupabase.deleteReview(r.id);
+          card.remove();
+        }
+      });
+
+      actions.append(delBtn);
+      card.append(header, body, actions);
+      adminReviewsList.appendChild(card);
+    });
+  } catch (e) {
+    adminReviewsList.innerHTML = `<div class="empty-state">Ошибка: ${e.message}</div>`;
+  }
+}
+
+async function renderAdminMaterials() {
+  if (!adminMaterialsList) return;
+  adminMaterialsList.innerHTML = `<div class="empty-state">Загрузка материалов...</div>`;
+  try {
+    const list = await SusuSupabase.getAllMaterials();
+    adminMaterialsList.innerHTML = "";
+    if (list.length === 0) {
+      adminMaterialsList.innerHTML = `<div class="empty-state">Материалов пока нет.</div>`;
+      return;
+    }
+
+    list.forEach((m) => {
+      const card = document.createElement("div");
+      card.className = "admin-card";
+
+      const header = document.createElement("div");
+      header.className = "admin-card-header";
+      header.innerHTML = `<span>📄 ${m.title}</span><span style="font-size:10px; opacity:0.6;">${m.year} г.</span>`;
+
+      const meta = document.createElement("div");
+      meta.style.fontSize = "10px";
+      meta.style.opacity = "0.7";
+      meta.textContent = `${m.file_name} • ${m.teacher_name || 'Без препода'}`;
+
+      const actions = document.createElement("div");
+      actions.className = "admin-actions-row";
+
+      const openLink = document.createElement("a");
+      openLink.className = "admin-mini-btn";
+      openLink.href = m.file_url;
+      openLink.target = "_blank";
+      openLink.textContent = "⬇ Открыть";
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "admin-mini-btn danger";
+      delBtn.textContent = "🗑️ Удалить файл";
+      delBtn.addEventListener("click", async () => {
+        if (confirm(`Удалить файл «${m.title}» из базы и хранилища?`)) {
+          await SusuSupabase.deleteMaterial(m.id, m.file_url);
+          card.remove();
+        }
+      });
+
+      actions.append(openLink, delBtn);
+      card.append(header, meta, actions);
+      adminMaterialsList.appendChild(card);
+    });
+  } catch (e) {
+    adminMaterialsList.innerHTML = `<div class="empty-state">Ошибка: ${e.message}</div>`;
+  }
+}

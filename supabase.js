@@ -262,6 +262,144 @@ const SusuSupabase = {
       headers: { "Prefer": "return=minimal" },
       body: JSON.stringify({ likes: currentLikes + 1 })
     });
+  },
+
+  // 10. AI-сводка о преподавателе (кэш в Supabase)
+  async getTeacherSummary(teacherName) {
+    if (!teacherName) return null;
+    try {
+      const res = await this.request(`teacher_summaries?teacher_name=eq.${encodeURIComponent(teacherName)}&select=*`);
+      return Array.isArray(res) && res.length > 0 ? res[0] : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async saveTeacherSummary(teacherName, summaryText, reviewsCount) {
+    if (!teacherName || !summaryText) return;
+    try {
+      await this.request("teacher_summaries?on_conflict=teacher_name", {
+        method: "POST",
+        headers: { "Prefer": "resolution=merge-duplicates" },
+        body: JSON.stringify([
+          {
+            teacher_name: teacherName,
+            summary_text: summaryText,
+            reviews_count: reviewsCount || 0,
+            updated_at: new Date().toISOString()
+          }
+        ])
+      });
+    } catch (e) {
+      console.warn("Save teacher summary warning:", e);
+    }
+  },
+
+  // 11. Система пользователей и прав (UUID)
+  async getUserProfile(userId) {
+    if (!userId) return { user_id: null, is_banned: false, can_view_materials: true, is_admin: false };
+    try {
+      const existing = await this.request(`app_users?user_id=eq.${userId}&select=*`);
+      if (Array.isArray(existing) && existing.length > 0) {
+        // Обновляем время последней активности
+        this.request(`app_users?user_id=eq.${userId}`, {
+          method: "PATCH",
+          headers: { "Prefer": "return=minimal" },
+          body: JSON.stringify({ last_active: new Date().toISOString() })
+        }).catch(() => {});
+        return existing[0];
+      }
+
+      // Регистрируем нового пользователя
+      const newUser = {
+        user_id: userId,
+        device_info: "Chrome Extension",
+        is_banned: false,
+        can_view_materials: true,
+        is_admin: false,
+        created_at: new Date().toISOString(),
+        last_active: new Date().toISOString()
+      };
+
+      await this.request("app_users?on_conflict=user_id", {
+        method: "POST",
+        headers: { "Prefer": "resolution=merge-duplicates" },
+        body: JSON.stringify([newUser])
+      });
+
+      return newUser;
+    } catch (e) {
+      console.warn("getUserProfile fallback:", e);
+      return { user_id: userId, is_banned: false, can_view_materials: true, is_admin: false };
+    }
+  },
+
+  async updateUser(userId, updates) {
+    if (!userId) return;
+    return await this.request(`app_users?user_id=eq.${userId}`, {
+      method: "PATCH",
+      headers: { "Prefer": "return=representation" },
+      body: JSON.stringify(updates)
+    });
+  },
+
+  // 12. Админские методы
+  async getAllUsers() {
+    try {
+      const res = await this.request("app_users?order=last_active.desc");
+      return Array.isArray(res) ? res : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async getAllReviews() {
+    try {
+      const res = await this.request("teacher_reviews?order=created_at.desc");
+      return Array.isArray(res) ? res : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async deleteReview(reviewId) {
+    return await this.request(`teacher_reviews?id=eq.${reviewId}`, {
+      method: "DELETE"
+    });
+  },
+
+  async getAllMaterials() {
+    try {
+      const res = await this.request("materials?order=created_at.desc");
+      return Array.isArray(res) ? res : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async deleteMaterial(materialId, fileUrl) {
+    // 1. Удаляем запись из БД
+    await this.request(`materials?id=eq.${materialId}`, {
+      method: "DELETE"
+    });
+
+    // 2. Если файл хранился в Supabase Storage, удаляем его из хранилища
+    if (fileUrl && fileUrl.includes("/storage/v1/object/public/materials/")) {
+      try {
+        const path = fileUrl.split("/storage/v1/object/public/materials/")[1];
+        if (path) {
+          await fetch(`${this.url}/storage/v1/object/materials/${path}`, {
+            method: "DELETE",
+            headers: {
+              "apikey": this.key,
+              "Authorization": `Bearer ${this.key}`
+            }
+          });
+        }
+      } catch (storageErr) {
+        console.warn("Failed to delete file from storage:", storageErr);
+      }
+    }
   }
 };
 

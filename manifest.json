@@ -18,7 +18,8 @@
     ],
     "host_permissions": [
         "https://online.susu.ru/*",
-        "https://*.supabase.co/*"
+        "https://*.supabase.co/*",
+        "https://api.groq.com/*"
     ],
     "content_scripts": [
         {
