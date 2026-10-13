@@ -225,18 +225,38 @@ const SusuSupabase = {
     return Array.isArray(res) ? res[0] : res;
   },
 
-  // 6. Голосование за материал (+1 / -1)
-  async voteMaterial(materialId, isUpvote) {
-    const col = isUpvote ? "upvotes" : "downvotes";
-    const cur = await this.request(`materials?id=eq.${materialId}&select=upvotes,downvotes`);
-    if (!cur || cur.length === 0) return;
-    const currentVal = cur[0][col] || 0;
+  // 6. Голосование за материал (+1 / -1 с защитой от накрутки)
+  async voteMaterial(materialId, isUpvote, prevVote = 0) {
+    if (!materialId) return;
+    try {
+      const cur = await this.request(`materials?id=eq.${materialId}&select=upvotes,downvotes`);
+      if (!cur || cur.length === 0) return;
+      let up = cur[0].upvotes || 0;
+      let down = cur[0].downvotes || 0;
 
-    await this.request(`materials?id=eq.${materialId}`, {
-      method: "PATCH",
-      headers: { "Prefer": "return=minimal" },
-      body: JSON.stringify({ [col]: currentVal + 1 })
-    });
+      if (prevVote === (isUpvote ? 1 : -1)) {
+        // Отмена своего голоса
+        if (isUpvote) up = Math.max(0, up - 1);
+        else down = Math.max(0, down - 1);
+      } else {
+        // Снятие старого противоположного голоса
+        if (prevVote === 1) up = Math.max(0, up - 1);
+        else if (prevVote === -1) down = Math.max(0, down - 1);
+
+        // Применение нового
+        if (isUpvote) up += 1;
+        else down += 1;
+      }
+
+      await this.request(`materials?id=eq.${materialId}`, {
+        method: "PATCH",
+        headers: { "Prefer": "return=minimal" },
+        body: JSON.stringify({ upvotes: up, downvotes: down })
+      });
+      return { upvotes: up, downvotes: down };
+    } catch (e) {
+      console.warn("voteMaterial error:", e);
+    }
   },
 
   // 7. Получить отзывы о преподавателе и сводную статистику
@@ -297,17 +317,72 @@ const SusuSupabase = {
     return Array.isArray(res) ? res[0] : res;
   },
 
-  // 9. Поставить лайк отзыву
-  async likeReview(reviewId) {
-    const cur = await this.request(`teacher_reviews?id=eq.${reviewId}&select=likes`);
-    if (!cur || cur.length === 0) return;
-    const currentLikes = cur[0].likes || 0;
+  // 9. Голосование за отзыв (+1 / -1 с защитой от накрутки)
+  async voteReview(reviewId, isUpvote, prevVote = 0) {
+    if (!reviewId) return;
+    try {
+      const cur = await this.request(`teacher_reviews?id=eq.${reviewId}&select=likes,dislikes`);
+      if (!cur || cur.length === 0) return;
+      let currentLikes = cur[0].likes || 0;
+      let hasDislikesCol = cur[0].dislikes !== undefined;
+      let currentDislikes = hasDislikesCol ? (cur[0].dislikes || 0) : null;
 
-    await this.request(`teacher_reviews?id=eq.${reviewId}`, {
-      method: "PATCH",
-      headers: { "Prefer": "return=minimal" },
-      body: JSON.stringify({ likes: currentLikes + 1 })
-    });
+      if (prevVote === (isUpvote ? 1 : -1)) {
+        // Отмена своего голоса
+        if (isUpvote) {
+          currentLikes = Math.max(0, currentLikes - 1);
+        } else if (hasDislikesCol) {
+          currentDislikes = Math.max(0, currentDislikes - 1);
+        } else {
+          currentLikes = currentLikes + 1;
+        }
+      } else {
+        // Снятие старого противоположного голоса
+        if (prevVote === 1) {
+          currentLikes = Math.max(0, currentLikes - 1);
+        } else if (prevVote === -1 && hasDislikesCol) {
+          currentDislikes = Math.max(0, currentDislikes - 1);
+        }
+
+        // Применение нового голоса
+        if (isUpvote) {
+          currentLikes += 1;
+        } else if (hasDislikesCol) {
+          currentDislikes += 1;
+        } else {
+          // Если колонки dislikes в БД ещё нет, дизлайк отнимает likes
+          currentLikes = Math.max(0, currentLikes - 1);
+        }
+      }
+
+      const patchBody = { likes: currentLikes };
+      if (hasDislikesCol) {
+        patchBody.dislikes = currentDislikes;
+      }
+
+      await this.request(`teacher_reviews?id=eq.${reviewId}`, {
+        method: "PATCH",
+        headers: { "Prefer": "return=minimal" },
+        body: JSON.stringify(patchBody)
+      });
+      return { likes: currentLikes, dislikes: currentDislikes || 0 };
+    } catch (e) {
+      console.warn("voteReview warning:", e);
+      // Резервный вызов
+      try {
+        const cur = await this.request(`teacher_reviews?id=eq.${reviewId}&select=likes`);
+        if (cur && cur.length > 0) {
+          const l = cur[0].likes || 0;
+          const newLikes = isUpvote ? l + 1 : Math.max(0, l - 1);
+          await this.request(`teacher_reviews?id=eq.${reviewId}`, {
+            method: "PATCH",
+            headers: { "Prefer": "return=minimal" },
+            body: JSON.stringify({ likes: newLikes })
+          });
+          return { likes: newLikes, dislikes: 0 };
+        }
+      } catch {}
+    }
   },
 
   // 10. AI-сводка о преподавателе (кэш в Supabase)

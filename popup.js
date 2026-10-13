@@ -11,7 +11,34 @@ const adminView = document.getElementById("admin-view");
 
 const subjectEl = document.getElementById("subject");
 const subjectTeacherEl = document.getElementById("subject-teacher");
+const subjectAssessmentBadgeEl = document.getElementById("subject-assessment-badge");
 const teacherReviewsBtn = document.getElementById("teacher-reviews-btn");
+
+function formatAssessmentBadge(badgeEl, assessmentType) {
+  if (!badgeEl) return;
+  if (!assessmentType) {
+    badgeEl.style.display = "none";
+    return;
+  }
+  badgeEl.style.display = "inline-flex";
+  badgeEl.className = "badge-assessment";
+  
+  if (assessmentType === "Экзамен") {
+    badgeEl.classList.add("exam");
+    badgeEl.textContent = "📘 Экзамен";
+  } else if (assessmentType === "Зачёт") {
+    badgeEl.classList.add("zachet");
+    badgeEl.textContent = "📗 Зачёт";
+  } else if (assessmentType === "Диф. зачёт") {
+    badgeEl.classList.add("diff");
+    badgeEl.textContent = "📙 Диф. зачёт";
+  } else if (assessmentType === "Курсовой проект") {
+    badgeEl.classList.add("course");
+    badgeEl.textContent = "📕 Курсовой проект";
+  } else {
+    badgeEl.textContent = `📋 ${assessmentType}`;
+  }
+}
 const teacherReviewsCount = document.getElementById("teacher-reviews-count");
 const pointsContainer = document.getElementById("points-container");
 const resultEl = document.getElementById("result");
@@ -734,15 +761,19 @@ function checkExistingDraft(subjectName) {
 }
 
 // Сохраняем предмет в общую историю для дашборда семестра (Фича 7)
-function saveSubjectToSemesterHistory(subjectName, rating, teacher, subjectId) {
+function saveSubjectToSemesterHistory(subjectName, rating, teacher, subjectId, assessmentType) {
   const clean = cleanSubjectName(subjectName);
   if (!clean || clean === "Без названия") return;
-  chrome.storage.local.get("semester_subjects", (res) => {
+  chrome.storage.local.get(["semester_subjects", "subjects_meta"], (res) => {
     const list = res.semester_subjects || {};
+    const metaMap = res.subjects_meta || {};
+    const foundMeta = (subjectId && metaMap[subjectId]) ? metaMap[subjectId].assessmentType : null;
+    const finalAssessment = assessmentType || foundMeta || list[clean]?.assessmentType || null;
     list[clean] = {
       name: clean,
       teacher: teacher || list[clean]?.teacher || "",
       subjectId: subjectId || list[clean]?.subjectId || null,
+      assessmentType: finalAssessment,
       rating: parseFloat(rating.toFixed(2)),
       updatedAt: Date.now()
     };
@@ -757,18 +788,23 @@ function renderDashboardScreen() {
   const statsEl = document.getElementById("dashboard-stats");
   const listEl = document.getElementById("dashboard-subjects-list");
 
-  chrome.storage.local.get("semester_subjects", (res) => {
+  chrome.storage.local.get(["semester_subjects", "subjects_meta"], (res) => {
     const rawMap = res.semester_subjects || {};
+    const metaMap = res.subjects_meta || {};
     // Очищаем и дедуплицируем записи
     const cleanMap = {};
     Object.values(rawMap).forEach((s) => {
       const clean = cleanSubjectName(s.name);
       if (!clean || clean === "Без названия") return;
+      const metaAss = (s.subjectId && metaMap[s.subjectId]) ? metaMap[s.subjectId].assessmentType : null;
+      const currentAss = s.assessmentType || metaAss || null;
+
       if (!cleanMap[clean] || (s.updatedAt || 0) >= (cleanMap[clean].updatedAt || 0)) {
         cleanMap[clean] = {
           name: clean,
           teacher: s.teacher || "",
           subjectId: s.subjectId || null,
+          assessmentType: currentAss,
           rating: s.rating,
           updatedAt: s.updatedAt || Date.now()
         };
@@ -813,7 +849,17 @@ function renderDashboardScreen() {
 
       const nameEl = document.createElement("div");
       nameEl.className = "dashboard-sub-name";
-      nameEl.innerHTML = `<div>${s.name}</div>${s.teacher ? `<div class="dashboard-sub-teacher">👨‍🏫 ${s.teacher}</div>` : ""}`;
+
+      let badgeHtml = "";
+      if (s.assessmentType) {
+        let badgeCls = "exam";
+        if (s.assessmentType === "Зачёт") badgeCls = "zachet";
+        else if (s.assessmentType === "Диф. зачёт") badgeCls = "diff";
+        else if (s.assessmentType === "Курсовой проект") badgeCls = "course";
+        badgeHtml = `<span class="badge-assessment badge-assessment-small ${badgeCls}">${s.assessmentType}</span>`;
+      }
+
+      nameEl.innerHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;"><span>${s.name}</span>${badgeHtml}</div>${s.teacher ? `<div class="dashboard-sub-teacher">👨‍🏫 ${s.teacher}</div>` : ""}`;
 
       const rightEl = document.createElement("div");
       rightEl.className = "dashboard-sub-right";
@@ -903,9 +949,20 @@ async function loadData() {
     resultEl.textContent = "Получение данных...";
     applySettingsToUI();
 
-    const sendGetData = () =>
+    const sendGetData = (timeoutMs = 2500) =>
       new Promise((resolve, reject) => {
+        let finished = false;
+        const timer = setTimeout(() => {
+          if (!finished) {
+            finished = true;
+            reject(new Error("Timeout waiting for contentScript"));
+          }
+        }, timeoutMs);
+
         chrome.tabs.sendMessage(tab.id, "getData", (response) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
           if (chrome.runtime.lastError) {
             reject(chrome.runtime.lastError);
           } else {
@@ -938,6 +995,11 @@ async function loadData() {
         subjectTeacherEl.style.display = "block";
       } else if (subjectTeacherEl) {
         subjectTeacherEl.style.display = "none";
+      }
+
+      // Форма контроля (Экзамен / Зачёт / Диф. зачёт / Курсовой проект)
+      if (subjectAssessmentBadgeEl) {
+        formatAssessmentBadge(subjectAssessmentBadgeEl, response.assessmentType);
       }
 
       // Обновляем бейдж отзывов о преподавателе
@@ -982,6 +1044,7 @@ async function loadData() {
       }
     } else if (response && response.notInSubject) {
       if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+      if (subjectAssessmentBadgeEl) subjectAssessmentBadgeEl.style.display = "none";
       if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
       subjectEl.textContent = "Выберите предмет";
       resultEl.textContent = "Перейдите в журнал предмета";
@@ -989,6 +1052,7 @@ async function loadData() {
       applySettingsToUI();
     } else if (response && response.subject && response.subject !== "Без названия") {
       if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+      if (subjectAssessmentBadgeEl) subjectAssessmentBadgeEl.style.display = "none";
       if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
       subjectEl.textContent = cleanSubjectName(response.subject);
       resultEl.textContent = "Контрольные точки не найдены";
@@ -996,6 +1060,7 @@ async function loadData() {
       applySettingsToUI();
     } else {
       if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+      if (subjectAssessmentBadgeEl) subjectAssessmentBadgeEl.style.display = "none";
       if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
       subjectEl.textContent = "Выберите предмет";
       resultEl.textContent = "Перейдите в журнал предмета";
@@ -1005,6 +1070,7 @@ async function loadData() {
   } catch (error) {
     console.error("Ошибка при получении данных:", error);
     if (subjectTeacherEl) subjectTeacherEl.style.display = "none";
+    if (subjectAssessmentBadgeEl) subjectAssessmentBadgeEl.style.display = "none";
     if (teacherReviewsBtn) teacherReviewsBtn.style.display = "none";
     subjectEl.textContent = "❌ Ошибка";
     applySettingsToUI();
@@ -1189,7 +1255,8 @@ function updateRating() {
     originalData.subject,
     finalRating,
     originalData.teacher,
-    originalData.subjectId
+    originalData.subjectId,
+    originalData.assessmentType
   );
 }
 
@@ -1250,6 +1317,10 @@ async function loadMaterialsList(checkpointId) {
       return;
     }
 
+    // Загружаем сохраненные голоса пользователя
+    const voteRes = await new Promise((res) => chrome.storage.local.get("user_material_votes", res));
+    const userVotes = voteRes?.user_material_votes || {};
+
     list.forEach((item) => {
       const card = document.createElement("div");
       card.className = "material-card";
@@ -1287,20 +1358,72 @@ async function loadMaterialsList(checkpointId) {
 
       const upBtn = document.createElement("button");
       upBtn.className = "vote-btn";
+      const isUpvoted = userVotes[item.id] === "up";
+      if (isUpvoted) upBtn.classList.add("active-up");
       upBtn.textContent = `▲ ${item.upvotes || 0}`;
-      upBtn.addEventListener("click", async () => {
-        await SusuSupabase.voteMaterial(item.id, true);
-        item.upvotes = (item.upvotes || 0) + 1;
-        upBtn.textContent = `▲ ${item.upvotes}`;
-      });
 
       const downBtn = document.createElement("button");
       downBtn.className = "vote-btn";
+      const isDownvoted = userVotes[item.id] === "down";
+      if (isDownvoted) downBtn.classList.add("active-down");
       downBtn.textContent = `▼ ${item.downvotes || 0}`;
+
+      upBtn.addEventListener("click", async () => {
+        upBtn.disabled = true;
+        downBtn.disabled = true;
+        const currentVote = userVotes[item.id] || null;
+        try {
+          const res = await SusuSupabase.voteMaterial(item.id, true, currentVote);
+          if (res) {
+            item.upvotes = res.upvotes;
+            item.downvotes = res.downvotes;
+            if (res.userVote) {
+              userVotes[item.id] = res.userVote;
+            } else {
+              delete userVotes[item.id];
+            }
+            chrome.storage.local.set({ user_material_votes: userVotes });
+
+            upBtn.textContent = `▲ ${item.upvotes || 0}`;
+            downBtn.textContent = `▼ ${item.downvotes || 0}`;
+            upBtn.classList.toggle("active-up", res.userVote === "up");
+            downBtn.classList.remove("active-down");
+          }
+        } catch (err) {
+          console.warn("Material vote error:", err);
+        } finally {
+          upBtn.disabled = false;
+          downBtn.disabled = false;
+        }
+      });
+
       downBtn.addEventListener("click", async () => {
-        await SusuSupabase.voteMaterial(item.id, false);
-        item.downvotes = (item.downvotes || 0) + 1;
-        downBtn.textContent = `▼ ${item.downvotes}`;
+        upBtn.disabled = true;
+        downBtn.disabled = true;
+        const currentVote = userVotes[item.id] || null;
+        try {
+          const res = await SusuSupabase.voteMaterial(item.id, false, currentVote);
+          if (res) {
+            item.upvotes = res.upvotes;
+            item.downvotes = res.downvotes;
+            if (res.userVote) {
+              userVotes[item.id] = res.userVote;
+            } else {
+              delete userVotes[item.id];
+            }
+            chrome.storage.local.set({ user_material_votes: userVotes });
+
+            upBtn.textContent = `▲ ${item.upvotes || 0}`;
+            downBtn.textContent = `▼ ${item.downvotes || 0}`;
+            downBtn.classList.toggle("active-down", res.userVote === "down");
+            upBtn.classList.remove("active-up");
+          }
+        } catch (err) {
+          console.warn("Material vote error:", err);
+        } finally {
+          upBtn.disabled = false;
+          downBtn.disabled = false;
+        }
       });
 
       voteGroup.append(upBtn, downBtn);
@@ -1481,6 +1604,10 @@ async function loadTeacherReviewsList(teacherName) {
       return;
     }
 
+    // Загружаем сохраненные голоса пользователя за отзывы
+    const voteRes = await new Promise((res) => chrome.storage.local.get("user_review_votes", res));
+    const userReviewVotes = voteRes?.user_review_votes || {};
+
     reviews.forEach((item) => {
       const card = document.createElement("div");
       card.className = "review-card";
@@ -1504,16 +1631,81 @@ async function loadTeacherReviewsList(teacherName) {
       const footer = document.createElement("div");
       footer.className = "review-footer";
 
+      const voteGroup = document.createElement("div");
+      voteGroup.className = "vote-group";
+
       const likeBtn = document.createElement("button");
       likeBtn.className = "vote-btn";
-      likeBtn.textContent = `👍 Полезно (${item.likes || 0})`;
+      const isUpvoted = userReviewVotes[item.id] === "up";
+      if (isUpvoted) likeBtn.classList.add("active-up");
+      likeBtn.textContent = `👍 (${item.likes || 0})`;
+
+      const dislikeBtn = document.createElement("button");
+      dislikeBtn.className = "vote-btn";
+      const isDownvoted = userReviewVotes[item.id] === "down";
+      if (isDownvoted) dislikeBtn.classList.add("active-down");
+      dislikeBtn.textContent = `👎 (${item.dislikes || 0})`;
+
       likeBtn.addEventListener("click", async () => {
-        await SusuSupabase.likeReview(item.id);
-        item.likes = (item.likes || 0) + 1;
-        likeBtn.textContent = `👍 Полезно (${item.likes})`;
+        likeBtn.disabled = true;
+        dislikeBtn.disabled = true;
+        const currentVote = userReviewVotes[item.id] || null;
+        try {
+          const res = await SusuSupabase.voteReview(item.id, true, currentVote);
+          if (res) {
+            item.likes = res.likes;
+            if (res.dislikes !== undefined) item.dislikes = res.dislikes;
+            if (res.userVote) {
+              userReviewVotes[item.id] = res.userVote;
+            } else {
+              delete userReviewVotes[item.id];
+            }
+            chrome.storage.local.set({ user_review_votes: userReviewVotes });
+
+            likeBtn.textContent = `👍 (${item.likes || 0})`;
+            dislikeBtn.textContent = `👎 (${item.dislikes || 0})`;
+            likeBtn.classList.toggle("active-up", res.userVote === "up");
+            dislikeBtn.classList.remove("active-down");
+          }
+        } catch (err) {
+          console.warn("Review vote error:", err);
+        } finally {
+          likeBtn.disabled = false;
+          dislikeBtn.disabled = false;
+        }
       });
 
-      footer.appendChild(likeBtn);
+      dislikeBtn.addEventListener("click", async () => {
+        likeBtn.disabled = true;
+        dislikeBtn.disabled = true;
+        const currentVote = userReviewVotes[item.id] || null;
+        try {
+          const res = await SusuSupabase.voteReview(item.id, false, currentVote);
+          if (res) {
+            item.likes = res.likes;
+            if (res.dislikes !== undefined) item.dislikes = res.dislikes;
+            if (res.userVote) {
+              userReviewVotes[item.id] = res.userVote;
+            } else {
+              delete userReviewVotes[item.id];
+            }
+            chrome.storage.local.set({ user_review_votes: userReviewVotes });
+
+            likeBtn.textContent = `👍 (${item.likes || 0})`;
+            dislikeBtn.textContent = `👎 (${item.dislikes || 0})`;
+            dislikeBtn.classList.toggle("active-down", res.userVote === "down");
+            likeBtn.classList.remove("active-up");
+          }
+        } catch (err) {
+          console.warn("Review vote error:", err);
+        } finally {
+          likeBtn.disabled = false;
+          dislikeBtn.disabled = false;
+        }
+      });
+
+      voteGroup.append(likeBtn, dislikeBtn);
+      footer.appendChild(voteGroup);
       card.append(header, meta, footer);
       reviewsList.appendChild(card);
     });

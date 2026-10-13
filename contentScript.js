@@ -18,6 +18,58 @@ function getSubjectIdFromUrl() {
   return null;
 }
 
+// Определение формы контроля (Зачёт / Экзамен / Диф. зачёт / Курсовой проект)
+function detectAssessmentType() {
+  let found = "";
+
+  // 1. Ищем в таблице журнала под заголовком "Промежуточная аттестация"
+  const allTbody = document.querySelectorAll("table.journal-table tbody");
+  let inIntermediate = false;
+
+  allTbody.forEach((tbody) => {
+    const header = tbody.querySelector(".table-header");
+    if (header) {
+      const text = header.innerText.trim();
+      if (text.includes("Промежуточная аттестация") || text.includes("Итоговая аттестация")) {
+        inIntermediate = true;
+      } else if (text.includes("Текущий контроль")) {
+        inIntermediate = false;
+      }
+    }
+
+    if (inIntermediate) {
+      const rows = tbody.querySelectorAll("tr");
+      rows.forEach((row) => {
+        const text = row.innerText.toLowerCase();
+        if (text.includes("дифференцированный") || text.includes("диф. зачет") || text.includes("диф.зачет") || text.includes("диф зачет")) {
+          found = "Диф. зачёт";
+        } else if (text.includes("курсовой проект")) {
+          found = "Курсовой проект";
+        } else if (text.includes("курсовая работа")) {
+          found = "Курсовая работа";
+        } else if (text.includes("экзамен") && !found) {
+          found = "Экзамен";
+        } else if ((text.includes("зачет") || text.includes("зачёт")) && !found) {
+          found = "Зачёт";
+        }
+      });
+    }
+  });
+
+  if (found) return found;
+
+  // 2. Ищем в шапке страницы или описании дисциплины
+  const fullHeader = document.querySelector(".discipline-name, .discipline-info, .title-block, .page-header, .journal-header");
+  const hText = fullHeader ? fullHeader.innerText.toLowerCase() : "";
+  if (hText.includes("дифференцированный зачет") || hText.includes("диф. зачет") || hText.includes("диф.зачет")) return "Диф. зачёт";
+  if (hText.includes("курсовой проект")) return "Курсовой проект";
+  if (hText.includes("курсовая работа")) return "Курсовая работа";
+  if (hText.includes("экзамен")) return "Экзамен";
+  if (hText.includes("зачет") || hText.includes("зачёт")) return "Зачёт";
+
+  return "";
+}
+
 // Извлечение чистого названия предмета БЕЗ виджетов и артефактов
 function getCleanSubjectName() {
   const disciplineEl = document.querySelector(".discipline-name");
@@ -25,7 +77,7 @@ function getCleanSubjectName() {
   const clone = disciplineEl.cloneNode(true);
   clone.querySelectorAll("#susu-rating-inline-widget, [id^='susu-']").forEach((e) => e.remove());
   let text = clone.innerText.trim();
-  return text.replace(/[🎓⚡].*$/, "").replace(/Рейтинг:.*$/, "").trim();
+  return text.replace(/[🎓⚡📝✅📊📂].*$/, "").replace(/Рейтинг:.*$/, "").trim();
 }
 
 // Сканирование карточек на странице общего списка дисциплин
@@ -43,6 +95,21 @@ function scanOverviewPage() {
       const name = nameEl?.innerText.trim();
       const teacher = teacherEl?.innerText.trim();
 
+      // Ищем тип контроля на карточке дисциплины
+      let assessmentType = "";
+      const cardText = card.innerText.toLowerCase();
+      if (cardText.includes("дифференцированный") || cardText.includes("диф. зачет") || cardText.includes("диф.зачет") || cardText.includes("диф зачет")) {
+        assessmentType = "Диф. зачёт";
+      } else if (cardText.includes("курсовой проект")) {
+        assessmentType = "Курсовой проект";
+      } else if (cardText.includes("курсовая работа")) {
+        assessmentType = "Курсовая работа";
+      } else if (cardText.includes("экзамен")) {
+        assessmentType = "Экзамен";
+      } else if (cardText.includes("зачет") || cardText.includes("зачёт")) {
+        assessmentType = "Зачёт";
+      }
+
       // Ищем ссылку на страницу журнала с UUID предмета
       const a = card.closest("a") || card.parentElement?.querySelector("a") || card.querySelector("a");
       const href = a?.getAttribute("href") || a?.href || "";
@@ -51,12 +118,17 @@ function scanOverviewPage() {
 
       if (name) {
         const existing = meta[name] || {};
-        if (existing.teacher !== teacher || (subjectId && existing.subjectId !== subjectId)) {
+        if (
+          existing.teacher !== teacher ||
+          (subjectId && existing.subjectId !== subjectId) ||
+          (assessmentType && existing.assessmentType !== assessmentType)
+        ) {
           meta[name] = {
             ...existing,
             subjectName: name,
             ...(teacher ? { teacher } : {}),
-            ...(subjectId ? { subjectId } : {})
+            ...(subjectId ? { subjectId } : {}),
+            ...(assessmentType ? { assessmentType } : {})
           };
           if (subjectId) {
             meta[subjectId] = meta[name];
@@ -75,6 +147,7 @@ function scanOverviewPage() {
 function parsePage() {
   const subject = getCleanSubjectName();
   const subjectId = getSubjectIdFromUrl();
+  const assessmentType = detectAssessmentType();
   const entries = [];
   let inCurrent = false;
 
@@ -84,12 +157,12 @@ function parsePage() {
     if (header) {
       const text = header.innerText.trim();
 
-      if (text === "Текущий контроль") {
+      if (text.includes("Текущий контроль")) {
         inCurrent = true;
         return;
       }
 
-      if (text === "Промежуточная аттестация") {
+      if (text.includes("Промежуточная аттестация") || text.includes("Итоговая аттестация")) {
         inCurrent = false;
         return;
       }
@@ -129,36 +202,41 @@ function parsePage() {
     });
   });
 
-  return { subject, subjectId, entries };
+  return { subject, subjectId, entries, assessmentType };
 }
 
 function waitForJournal(timeout = 3000) {
   return new Promise((resolve) => {
     if (!isSubjectPage()) {
-      resolve({ notInSubject: true, subject: "", entries: [] });
+      resolve({ notInSubject: true, subject: "", entries: [], assessmentType: "" });
       return;
     }
 
     const start = Date.now();
 
     const check = () => {
-      const data = parsePage();
+      try {
+        const data = parsePage();
 
-      if (data.entries.length > 0) {
-        resolve(data);
-        return;
-      }
-
-      if (Date.now() - start > timeout) {
-        if (!data.subject) {
-          resolve({ notInSubject: true, subject: "", entries: [] });
-        } else {
+        if (data.entries.length > 0) {
           resolve(data);
+          return;
         }
-        return;
-      }
 
-      setTimeout(check, 250);
+        if (Date.now() - start > timeout) {
+          if (!data.subject) {
+            resolve({ notInSubject: true, subject: "", entries: [], assessmentType: "" });
+          } else {
+            resolve(data);
+          }
+          return;
+        }
+
+        setTimeout(check, 200);
+      } catch (err) {
+        console.warn("parsePage check error:", err);
+        resolve({ notInSubject: false, subject: "", entries: [], assessmentType: "" });
+      }
     };
 
     check();
@@ -222,7 +300,7 @@ function injectInlineStyles() {
     .susu-widget-left {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       flex-wrap: wrap;
     }
     .susu-widget-title-tag {
@@ -236,6 +314,16 @@ function injectInlineStyles() {
     .susu-widget-teacher-tag {
       font-size: 12px;
       color: ${isDark ? "#cbd5e1 !important" : "#64748b !important"};
+    }
+    .susu-widget-assessment-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.25;
     }
     .susu-stat-item {
       display: inline-flex;
@@ -289,6 +377,7 @@ function renderInlineWidget() {
     const meta = res.subjects_meta || {};
     const metaInfo = (data.subjectId && meta[data.subjectId]) || (data.subject && meta[data.subject]) || {};
     const teacherName = metaInfo.teacher || "";
+    const assessmentType = data.assessmentType || metaInfo.assessmentType || "";
 
     let total = 0, totalWeight = 0;
     let lockedTotal = 0;
@@ -320,6 +409,7 @@ function renderInlineWidget() {
         list[cleanName] = {
           name: cleanName,
           teacher: teacherName,
+          assessmentType: assessmentType,
           subjectId: data.subjectId || null,
           rating: parseFloat(rating.toFixed(2)),
           updatedAt: Date.now()
@@ -341,7 +431,7 @@ function renderInlineWidget() {
       widget.id = "susu-rating-inline-widget";
       widget.className = "susu-rating-card-widget";
 
-      // Вставляем строго ПОСЛЕ названия предмета, а не внутрь него!
+      // Вставляем строго ПОСЛЕ названия предмета
       const disciplineEl = document.querySelector(".discipline-name");
       if (disciplineEl) {
         disciplineEl.insertAdjacentElement("afterend", widget);
@@ -374,9 +464,31 @@ function renderInlineWidget() {
     const pillColor = isDark ? grade.badgeText : grade.lightText;
     const teacherHtml = teacherName ? `<span class="susu-widget-teacher-tag">👨‍🏫 ${teacherName}</span>` : "";
 
+    let assessmentBadgeHtml = "";
+    if (assessmentType) {
+      let icon = "📝";
+      let bg = isDark ? "#1e3a8a" : "#dbeafe";
+      let col = isDark ? "#93c5fd" : "#1d4ed8";
+      if (assessmentType === "Зачёт") {
+        icon = "✅";
+        bg = isDark ? "#14532d" : "#dcfce7";
+        col = isDark ? "#86efac" : "#15803d";
+      } else if (assessmentType === "Диф. зачёт") {
+        icon = "📊";
+        bg = isDark ? "#581c87" : "#f3e8ff";
+        col = isDark ? "#d8b4fe" : "#7e22ce";
+      } else if (assessmentType.includes("Курсов")) {
+        icon = "📂";
+        bg = isDark ? "#78350f" : "#fef3c7";
+        col = isDark ? "#fde68a" : "#b45309";
+      }
+      assessmentBadgeHtml = `<span class="susu-widget-assessment-badge" style="background:${bg} !important; color:${col} !important;">${icon} ${assessmentType}</span>`;
+    }
+
     widget.innerHTML = `
       <div class="susu-widget-left">
-        <span class="susu-widget-title-tag">⚡ БРС Калькулятор:</span>
+        <span class="susu-widget-title-tag">⚡ БРС:</span>
+        ${assessmentBadgeHtml}
         ${teacherHtml}
         <span class="susu-stat-item">Текущий: <strong>${rating.toFixed(2)}%</strong></span>
         <span class="susu-grade-pill-tag" style="background:${pillBg} !important; color:${pillColor} !important;">
@@ -387,6 +499,44 @@ function renderInlineWidget() {
       </div>
     `;
   });
+}
+
+// === ПОЛНАЯ ПОДДЕРЖКА SPA-НАВИГАЦИИ (Vue Router / History API) ===
+let lastTrackedUrl = window.location.href;
+
+function handleSpaUrlChange() {
+  if (window.location.href !== lastTrackedUrl) {
+    lastTrackedUrl = window.location.href;
+    const oldWidget = document.getElementById("susu-rating-inline-widget");
+    if (oldWidget) oldWidget.remove();
+
+    if (isSubjectPage()) {
+      setTimeout(renderInlineWidget, 350);
+    } else {
+      setTimeout(scanOverviewPage, 350);
+    }
+  }
+}
+
+// Перехват pushState и replaceState для мгновенной реакции на роутинг
+if (!window.__susuHistoryPatched) {
+  window.__susuHistoryPatched = true;
+  const originalPush = history.pushState;
+  history.pushState = function(...args) {
+    const ret = originalPush.apply(this, args);
+    window.dispatchEvent(new Event("susu-location-change"));
+    return ret;
+  };
+
+  const originalReplace = history.replaceState;
+  history.replaceState = function(...args) {
+    const ret = originalReplace.apply(this, args);
+    window.dispatchEvent(new Event("susu-location-change"));
+    return ret;
+  };
+
+  window.addEventListener("popstate", handleSpaUrlChange);
+  window.addEventListener("susu-location-change", handleSpaUrlChange);
 }
 
 // Запуск при загрузке страницы
@@ -400,8 +550,9 @@ if (document.readyState === "loading") {
   else setTimeout(scanOverviewPage, 500);
 }
 
-// Отслеживание изменений DOM (для SPA-навигации)
+// Отслеживание изменений DOM (динамический рендеринг таблиц)
 const observer = new MutationObserver(() => {
+  handleSpaUrlChange();
   if (isSubjectPage()) {
     if (!document.getElementById("susu-rating-inline-widget")) {
       const table = document.querySelector("table.journal-table");
@@ -419,11 +570,27 @@ if (!window.__susuRatingHelperInjected) {
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg === "getData") {
+      let isAnswered = false;
+      const sendSafe = (payload) => {
+        if (!isAnswered) {
+          isAnswered = true;
+          sendResponse(payload);
+        }
+      };
+
+      // Аварийный таймаут ответа (3.5 сек), чтобы popup никогда не зависал!
+      const guardTimer = setTimeout(() => {
+        const fallback = parsePage();
+        sendSafe(fallback.entries.length > 0 ? fallback : { notInSubject: !isSubjectPage(), subject: fallback.subject || "", entries: [], assessmentType: fallback.assessmentType || "" });
+      }, 3500);
+
       waitForJournal().then((data) => {
+        clearTimeout(guardTimer);
         chrome.storage.local.get("subjects_meta", (res) => {
           const meta = res.subjects_meta || {};
           const info = (data.subjectId && meta[data.subjectId]) || (data.subject && meta[data.subject]) || {};
           data.teacher = info.teacher || "";
+          data.assessmentType = info.assessmentType || data.assessmentType || "";
 
           // Привязываем ID предмета и название
           if (data.subjectId && data.subject) {
@@ -431,17 +598,24 @@ if (!window.__susuRatingHelperInjected) {
               ...(meta[data.subject] || {}),
               subjectId: data.subjectId,
               subjectName: data.subject,
-              ...(data.teacher ? { teacher: data.teacher } : {})
+              ...(data.teacher ? { teacher: data.teacher } : {}),
+              ...(data.assessmentType ? { assessmentType: data.assessmentType } : {})
             };
             meta[data.subjectId] = meta[data.subject];
             chrome.storage.local.set({ subjects_meta: meta });
           }
 
           renderInlineWidget();
-          sendResponse(data);
+          sendSafe(data);
         });
+      }).catch((err) => {
+        clearTimeout(guardTimer);
+        console.warn("waitForJournal fallback:", err);
+        const fallback = parsePage();
+        sendSafe(fallback.entries.length > 0 ? fallback : { notInSubject: !isSubjectPage(), subject: fallback.subject || "", entries: [], assessmentType: fallback.assessmentType || "" });
       });
-      return true;
+
+      return true; // Keep message channel open for async response
     }
   });
 }
