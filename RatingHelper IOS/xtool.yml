@@ -1,0 +1,4 @@
+version: 1
+bundleID: org.ratinghelper.susu
+iconPath: Resources/AppIcon.png
+infoPath: Resources/Info.plist
