@@ -22,20 +22,27 @@ public struct JournalView: View {
         appState.currentJournal
     }
 
+    private var allGradedEntries: [CheckpointItem] {
+        guard let j = journal else { return [] }
+        return j.allContinuousAssignments
+    }
+
     private var ratingResult: RatingResult {
         guard let j = journal else {
-            return RatingResult(currentControlRating: 0, finalRating: 0, grade: .unsatisfactory, subtext: "", totalWeight: 0)
+            let eval = AcademicEvaluation.evaluate(percentage: 0, assessmentType: subject.assessmentType)
+            return RatingResult(currentControlRating: 0, finalRating: 0, grade: .unsatisfactory, evaluation: eval, subtext: "", totalWeight: 0)
         }
         let bonusContribution = bonusEnabled ? (
             j.bonusInfo.known ? (bonusPoints * j.bonusInfo.percentPerPoint) : bonusPoints
         ) : 0.0
 
         return RatingCalculator.compute(
-            entries: j.currentControl,
+            entries: allGradedEntries,
             scores: scores,
             bonus: bonusContribution,
             isExam: isExam,
-            examScore: examScore
+            examScore: examScore,
+            assessmentType: subject.assessmentType
         )
     }
 
@@ -47,7 +54,7 @@ public struct JournalView: View {
 
         return TargetCalculator.computeGoal(
             target: selectedTarget,
-            entries: j.currentControl,
+            entries: allGradedEntries,
             currentScores: scores,
             bonus: bonusContribution,
             isExam: isExam
@@ -61,7 +68,7 @@ public struct JournalView: View {
         ) : 0.0
 
         return RangeForecaster.computeForecast(
-            entries: j.currentControl,
+            entries: allGradedEntries,
             currentRating: ratingResult.finalRating,
             bonus: bonusContribution
         )
@@ -88,12 +95,27 @@ public struct JournalView: View {
                         draftBanner
                     }
 
+                    // Offline mode banner
+                    if appState.isOfflineMode {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wifi.slash")
+                                .font(.caption2)
+                            Text("Офлайн-режим: показаны сохранённые баллы")
+                                .font(.caption2.weight(.medium))
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.orange.opacity(0.12))
+                        .cornerRadius(8)
+                    }
+
                     // Main Rating Grade Card
                     gradeCard
 
                     // Range Forecast
                     if appState.settings.rangeForecast {
-                        RangeForecastView(forecast: rangeForecast)
+                        RangeForecastView(forecast: rangeForecast, assessmentType: subject.assessmentType)
                             .padding(.horizontal)
                     }
 
@@ -102,6 +124,7 @@ public struct JournalView: View {
                         TargetGoalView(
                             result: targetGoalResult,
                             selectedTarget: selectedTarget,
+                            assessmentType: subject.assessmentType,
                             onSelectTarget: { selectedTarget = $0 },
                             onApplyScores: { applied in
                                 scores = applied
@@ -115,15 +138,19 @@ public struct JournalView: View {
                     if appState.settings.quickActions {
                         SimulatorControlBar(
                             onRemainingMax: {
-                                for i in 0..<j.currentControl.count {
-                                    if j.currentControl[i].current == 0 || scores[i] == 0 {
-                                        scores[i] = j.currentControl[i].max
+                                for i in 0..<allGradedEntries.count {
+                                    if allGradedEntries[i].current == 0 || (i < scores.count && scores[i] == 0) {
+                                        if i < scores.count {
+                                            scores[i] = allGradedEntries[i].max
+                                        }
                                     }
                                 }
                             },
                             onAllMax: {
-                                for i in 0..<j.currentControl.count {
-                                    scores[i] = j.currentControl[i].max
+                                for i in 0..<allGradedEntries.count {
+                                    if i < scores.count {
+                                        scores[i] = allGradedEntries[i].max
+                                    }
                                 }
                             },
                             onReset: {
@@ -155,15 +182,42 @@ public struct JournalView: View {
                     // Bonus Points Card
                     bonusCard
 
-                    // Current Control Checkpoints Section
-                    checkpointsSection(j)
+                    // 1. Current Control Checkpoints Section
+                    if !j.currentControl.isEmpty {
+                        checkpointsSection(
+                            title: "Текущий контроль",
+                            icon: "pencil.and.list.clipboard",
+                            items: j.currentControl,
+                            globalStartIndex: 0
+                        )
+                    }
 
-                    // Other sections (Bonuses, Attestation)
+                    // 2. Laboratory Works Section
+                    if !j.labs.isEmpty {
+                        checkpointsSection(
+                            title: "Лабораторные работы",
+                            icon: "flask.fill",
+                            items: j.labs,
+                            globalStartIndex: j.currentControl.count
+                        )
+                    }
+
+                    // 3. Course Works / Projects Section
+                    if !j.courseWorksOrProjects.isEmpty {
+                        checkpointsSection(
+                            title: "Курсовая работа",
+                            icon: "doc.text.fill",
+                            items: j.courseWorksOrProjects,
+                            globalStartIndex: j.currentControl.count + j.labs.count
+                        )
+                    }
+
+                    // 4. Other sections (Bonuses, Attestation)
                     if !j.bonuses.isEmpty {
-                        readOnlySection(title: "Официальные бонусы", items: j.bonuses)
+                        readOnlySection(title: "Официальные бонусы", icon: "star.fill", items: j.bonuses)
                     }
                     if !j.attestation.isEmpty {
-                        readOnlySection(title: "Промежуточная аттестация", items: j.attestation)
+                        readOnlySection(title: "Промежуточная аттестация", icon: "graduationcap.fill", items: j.attestation)
                     }
                 }
             }
@@ -216,16 +270,17 @@ public struct JournalView: View {
 
     private func syncInitialScores() {
         guard let j = appState.currentJournal else { return }
+        let totalCount = allGradedEntries.count
 
         // If there is an active draft plan, restore it
-        if let draft = appState.activeDraft, draft.scores.count == j.currentControl.count {
+        if let draft = appState.activeDraft, draft.scores.count == totalCount {
             self.scores = draft.scores
             self.bonusPoints = draft.bonus
             self.bonusEnabled = draft.bonus > 0
             self.isExam = draft.isExam
             self.examScore = draft.examScore
         } else {
-            self.scores = j.currentControl.map { $0.current }
+            self.scores = allGradedEntries.map { $0.current }
             if j.bonusInfo.detectedPoints > 0 {
                 self.bonusPoints = j.bonusInfo.detectedPoints
                 self.bonusEnabled = true
@@ -234,8 +289,8 @@ public struct JournalView: View {
     }
 
     private func resetToFact() {
-        guard let j = journal else { return }
-        scores = j.currentControl.map { $0.current }
+        guard journal != nil else { return }
+        scores = allGradedEntries.map { $0.current }
         isExam = false
         examScore = 60.0
         bonusEnabled = false
@@ -292,12 +347,12 @@ public struct JournalView: View {
                         .foregroundColor(.secondary)
                     Text(String(format: "%.2f%%", ratingResult.finalRating))
                         .font(.system(size: 38, weight: .bold, design: .rounded))
-                        .foregroundColor(ratingResult.grade.color)
+                        .foregroundColor(ratingResult.evaluation.color)
                 }
 
                 Spacer()
 
-                GradeBadgeView(grade: ratingResult.grade)
+                GradeBadgeView(grade: ratingResult.grade, evaluation: ratingResult.evaluation)
             }
 
             Divider()
@@ -387,29 +442,32 @@ public struct JournalView: View {
         .padding(.horizontal)
     }
 
-    private func checkpointsSection(_ j: JournalData) -> some View {
+    private func checkpointsSection(title: String, icon: String, items: [CheckpointItem], globalStartIndex: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Текущий контроль")
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(AppTheme.susuBluePrimary)
+                Text(title)
                     .font(.headline)
                 Spacer()
-                Text("Работ: \(j.currentControl.count)")
+                Text("Работ: \(items.count)")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal)
 
             VStack(spacing: 0) {
-                ForEach(0..<j.currentControl.count, id: \.self) { idx in
-                    let entry = j.currentControl[idx]
-                    let current = idx < scores.count ? scores[idx] : entry.current
+                ForEach(0..<items.count, id: \.self) { idx in
+                    let entry = items[idx]
+                    let globalIdx = globalStartIndex + idx
+                    let current = globalIdx < scores.count ? scores[globalIdx] : entry.current
 
                     CheckpointRowView(
                         entry: entry,
                         currentScore: current,
                         onScoreChange: { newScore in
-                            if idx < scores.count {
-                                scores[idx] = newScore
+                            if globalIdx < scores.count {
+                                scores[globalIdx] = newScore
                             }
                         },
                         onOpenMaterials: {
@@ -424,7 +482,7 @@ public struct JournalView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 4)
 
-                    if idx < j.currentControl.count - 1 {
+                    if idx < items.count - 1 {
                         Divider()
                             .padding(.leading, 14)
                     }
@@ -436,11 +494,16 @@ public struct JournalView: View {
         }
     }
 
-    private func readOnlySection(title: String, items: [CheckpointItem]) -> some View {
+    private func readOnlySection(title: String, icon: String, items: [CheckpointItem]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-                .padding(.horizontal)
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(.secondary)
+                Text(title)
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal)
 
             VStack(spacing: 8) {
                 ForEach(items) { item in

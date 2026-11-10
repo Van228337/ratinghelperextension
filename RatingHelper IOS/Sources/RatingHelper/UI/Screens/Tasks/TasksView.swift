@@ -6,6 +6,7 @@ public struct TasksView: View {
 
     @State private var viewMode: TaskViewMode = .list
     @State private var showingCreateSheet: Bool = false
+    @State private var showingMoodleSheet: Bool = false
     @State private var editingTask: StudyTask? = nil
     @State private var showCompletedSection: Bool = false
 
@@ -77,6 +78,18 @@ public struct TasksView: View {
             .navigationTitle("Учебный план")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingMoodleSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "graduationcap.fill")
+                            Text("Moodle")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .foregroundColor(AppTheme.susuBluePrimary)
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingCreateSheet = true
@@ -89,6 +102,9 @@ public struct TasksView: View {
             .searchable(text: $taskManager.searchQuery, prompt: "Поиск по названию или предмету")
             .sheet(isPresented: $showingCreateSheet) {
                 CreateTaskSheet()
+            }
+            .sheet(isPresented: $showingMoodleSheet) {
+                MoodleCalendarView()
             }
             .sheet(item: $editingTask) { task in
                 CreateTaskSheet(initialTask: task)

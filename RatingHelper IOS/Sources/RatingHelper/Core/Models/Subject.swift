@@ -7,7 +7,7 @@ public enum AssessmentType: String, Codable, CaseIterable, Sendable {
     case coursework = "Курсовая работа"
     case courseProject = "Курсовой проект"
     case practice = "Практика"
-    case unknown = "Контроль"
+    case unknown = "Другое"
 
     public var icon: String {
         switch self {
@@ -37,15 +37,15 @@ public enum AssessmentType: String, Codable, CaseIterable, Sendable {
         }
         if text.contains("практик") {
             return .practice
-        } else if text.contains("дифференцированный") || text.contains("диф. зачет") || text.contains("диф.зачет") || text.contains("диф зачет") || text.contains("диф. зачёт") {
+        } else if text.contains("дифференцированный") || text.contains("диф. зачет") || text.contains("диф.зачет") || text.contains("диф зачет") || text.contains("диф. зачёт") || text == "диф.зач" || text == "дифзачет" {
             return .diffZachet
-        } else if text.contains("курсовой проект") {
+        } else if text.contains("курсовой проект") || text == "кп" || text.hasPrefix("кп ") || text.hasSuffix(" кп") {
             return .courseProject
-        } else if text.contains("курсовая работа") {
+        } else if text.contains("курсовая работа") || text.contains("курсовая") || text.contains("курсовой") || text.contains("курсовые") || text == "кр" || text.hasPrefix("кр ") || text.hasSuffix(" кр") {
             return .coursework
-        } else if text.contains("экзамен") {
+        } else if text.contains("экзамен") || text == "экз" {
             return .exam
-        } else if text.contains("зачет") || text.contains("зачёт") {
+        } else if text.contains("зачет") || text.contains("зачёт") || text == "зач" {
             return .zachet
         }
         return .unknown
@@ -76,13 +76,18 @@ public struct RawSubjectResponse: Codable, Sendable {
     public let checkNumber: Int?
     public let termNumber: Int?
     public let instructors: [SubjectInstructor]?
+    public let isCourseWorkOrProject: Bool?
+    public let isCredit: Bool?
 
     enum CodingKeys: String, CodingKey {
         case disciplineId, disciplineName, rating, controlType, assessmentType, attestationType
         case controlTypeId, checkNumber, termNumber, instructors
+        case isCourseWorkOrProject, isCredit
         case controlTypeSnake = "control_type"
         case attestationTypeSnake = "attestation_type"
         case controlTypeIdSnake = "control_type_id"
+        case isCourseWorkOrProjectSnake = "is_course_work_or_project"
+        case isCreditSnake = "is_credit"
     }
 
     public init(from decoder: Decoder) throws {
@@ -104,6 +109,10 @@ public struct RawSubjectResponse: Codable, Sendable {
         checkNumber = decodeInt(.checkNumber)
         termNumber = decodeInt(.termNumber)
         instructors = try c.decodeIfPresent([SubjectInstructor].self, forKey: .instructors)
+        isCourseWorkOrProject = try c.decodeIfPresent(Bool.self, forKey: .isCourseWorkOrProject)
+            ?? (try c.decodeIfPresent(Bool.self, forKey: .isCourseWorkOrProjectSnake))
+        isCredit = try c.decodeIfPresent(Bool.self, forKey: .isCredit)
+            ?? (try c.decodeIfPresent(Bool.self, forKey: .isCreditSnake))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -118,6 +127,8 @@ public struct RawSubjectResponse: Codable, Sendable {
         try c.encodeIfPresent(checkNumber, forKey: .checkNumber)
         try c.encodeIfPresent(termNumber, forKey: .termNumber)
         try c.encodeIfPresent(instructors, forKey: .instructors)
+        try c.encodeIfPresent(isCourseWorkOrProject, forKey: .isCourseWorkOrProject)
+        try c.encodeIfPresent(isCredit, forKey: .isCredit)
     }
 }
 
@@ -164,13 +175,50 @@ public struct Subject: Identifiable, Codable, Hashable, Sendable {
     public static func from(raw: RawSubjectResponse, term: Int, isHidden: Bool = false) -> Subject {
         let instructorName = raw.instructors?.first?.fullName ?? ""
         let control = raw.controlType ?? raw.assessmentType ?? raw.attestationType ?? ""
+        
+        var parsedType = AssessmentType.parse(control)
+
+        // 1. Check if explicitly marked as Course Work or Project
+        let lowerName = raw.disciplineName.lowercased()
+        let lowerControl = control.lowercased()
+        let isCwFlag = raw.isCourseWorkOrProject == true
+        let hasCwName = lowerName.contains("курсов") || lowerName.contains(" кр") || lowerName.contains(" кп") || lowerControl.contains("курсов") || lowerControl == "кр" || lowerControl == "кп"
+
+        if parsedType == .unknown && (isCwFlag || hasCwName) {
+            if lowerName.contains("проект") || lowerControl.contains("проект") || lowerControl == "кп" {
+                parsedType = .courseProject
+            } else {
+                parsedType = .coursework
+            }
+        }
+
+        // 2. Check controlTypeId mappings from SUSU API database
+        if parsedType == .unknown, let typeId = raw.controlTypeId {
+            switch typeId {
+            case 1: parsedType = .exam
+            case 2: parsedType = .zachet
+            case 3: parsedType = .diffZachet
+            case 4: parsedType = .coursework
+            case 5: parsedType = .courseProject
+            case 6: parsedType = .practice
+            default: break
+            }
+        }
+
+        // 3. Fallback check for credit / exam flag
+        if parsedType == .unknown {
+            if let isCredit = raw.isCredit {
+                parsedType = isCredit ? .zachet : .exam
+            }
+        }
+
         let hasJournal = !(raw.instructors?.isEmpty ?? true)
         return Subject(
             disciplineId: raw.disciplineId,
             disciplineName: cleanName(raw.disciplineName),
             rating: raw.rating ?? 0.0,
-            controlType: control,
-            assessmentType: AssessmentType.parse(control),
+            controlType: control.isEmpty ? parsedType.rawValue : control,
+            assessmentType: parsedType,
             checkNumber: raw.checkNumber ?? 0,
             termNumber: raw.termNumber ?? term,
             instructor: instructorName,

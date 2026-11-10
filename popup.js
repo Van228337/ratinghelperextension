@@ -477,7 +477,28 @@ resetSettingsBtn.addEventListener("click", () => {
 
 // === ОПРЕДЕЛЕНИЕ ОЦЕНКИ ПО ШКАЛЕ БРС (ФИЧА 4) ===
 // 59.01% - уже 3 или зачтено, 74.01% - четверка, 84.01% - пятерка
-function getAcademicGrade(pct) {
+function getAcademicGrade(pct, assessmentType = "") {
+  if (assessmentType === "Зачёт") {
+    if (pct >= 59.01) {
+      return {
+        grade: "Зачёт",
+        label: "Зачтено",
+        badgeClass: "green",
+        subtext: "Порог 59.01% успешно преодолён! Зачёт получен.",
+        threshold: 59.01
+      };
+    } else {
+      const toNext = (59.01 - pct).toFixed(2);
+      return {
+        grade: "Незачёт",
+        label: "Не зачтено",
+        badgeClass: "red",
+        subtext: `До зачёта не хватает ${toNext}%`,
+        threshold: 0
+      };
+    }
+  }
+
   if (pct >= 84.01) {
     return {
       grade: 5,
@@ -510,7 +531,7 @@ function getAcademicGrade(pct) {
       grade: 2,
       label: "Незачёт / Долг (2)",
       badgeClass: "red",
-      subtext: `До зачёта / тройки не хватает ${toNext}%`,
+      subtext: `До тройки не хватает ${toNext}%`,
       threshold: 0
     };
   }
@@ -864,7 +885,7 @@ function renderDashboardScreen() {
       const rightEl = document.createElement("div");
       rightEl.className = "dashboard-sub-right";
 
-      const g = getAcademicGrade(s.rating);
+      const g = getAcademicGrade(s.rating, s.assessmentType);
       const b = document.createElement("span");
       b.className = `grade-badge ${g.badgeClass}`;
       b.textContent = `${s.rating}%`;
@@ -1231,7 +1252,7 @@ function updateRating() {
   }
 
   // Обновляем оценку (Фича 4)
-  const gradeInfo = getAcademicGrade(finalRating);
+  const gradeInfo = getAcademicGrade(finalRating, originalData?.assessmentType);
   ratingVal.textContent = `${finalRating.toFixed(2)}%`;
   gradeBadge.textContent = gradeInfo.label;
   gradeBadge.className = `grade-badge ${gradeInfo.badgeClass}`;

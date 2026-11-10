@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rating Helper — Панель администратора</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase JS Client CDN -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <link rel="icon" href="../icons/icon-128.png" type="image/png">
+  <style>
+    [v-cloak] { display: none; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+  <div id="app" v-cloak class="min-h-screen flex flex-col">
+
+    <!-- LOGIN SCREEN -->
+    <div v-if="!isAuthenticated" class="flex-1 flex items-center justify-center p-4">
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-8 max-w-md w-full">
+        <div class="text-center mb-8">
+          <div class="w-16 h-16 bg-blue-600/20 border border-blue-500/40 text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg">
+            🛡️
+          </div>
+          <h1 class="text-2xl font-bold text-white tracking-tight">Rating Helper Admin</h1>
+          <p class="text-sm text-slate-400 mt-1">Панель управления пользователями и безопасностью</p>
+        </div>
+
+        <form @submit.prevent="login" class="space-y-5">
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              Мастер-ключ администратора
+            </label>
+            <input 
+              v-model="adminSecret" 
+              type="password" 
+              placeholder="••••••••••••••••" 
+              required
+              class="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+              :disabled="isAuthenticating"
+            >
+          </div>
+
+          <div v-if="authError" class="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{{ authError }}</span>
+          </div>
+
+          <button 
+            type="submit" 
+            :disabled="isAuthenticating"
+            class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <span v-if="isAuthenticating" class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+            <span>{{ isAuthenticating ? 'Проверка прав...' : 'Войти в панель' }}</span>
+          </button>
+        </form>
+
+        <div class="mt-8 pt-6 border-t border-slate-700/60 text-center">
+          <p class="text-xs text-slate-500">
+            Безопасная серверная валидация ключа • Supabase RPC v3.0
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN ADMIN INTERFACE -->
+    <div v-else class="flex-1 flex flex-col">
+      <!-- TOP NAVIGATION -->
+      <header class="bg-slate-800/90 backdrop-blur border-b border-slate-700/80 sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 bg-blue-600/20 border border-blue-500/40 text-blue-400 rounded-lg flex items-center justify-center text-lg">
+              🛡️
+            </div>
+            <div>
+              <span class="font-bold text-white tracking-tight">Rating Helper</span>
+              <span class="ml-2 text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full font-mono">v3.0 Security</span>
+            </div>
+          </div>
+
+          <!-- TABS -->
+          <nav class="hidden md:flex items-center gap-2">
+            <button 
+              @click="activeTab = 'users'"
+              :class="activeTab === 'users' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'"
+              class="px-4 py-2 rounded-lg text-sm font-medium transition"
+            >
+              👥 Пользователи ({{ users.length }})
+            </button>
+            <button 
+              @click="activeTab = 'audit'"
+              :class="activeTab === 'audit' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'"
+              class="px-4 py-2 rounded-lg text-sm font-medium transition"
+            >
+              📜 Журнал аудита
+            </button>
+            <button 
+              @click="activeTab = 'stats'"
+              :class="activeTab === 'stats' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'"
+              class="px-4 py-2 rounded-lg text-sm font-medium transition"
+            >
+              📊 Статистика
+            </button>
+          </nav>
+
+          <!-- ACTIONS & LOGOUT -->
+          <div class="flex items-center gap-3">
+            <button 
+              @click="refreshData" 
+              title="Обновить данные"
+              class="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition"
+              :class="{'animate-spin text-blue-400': isLoading}"
+            >
+              🔄
+            </button>
+            <button 
+              @click="logout"
+              class="text-xs text-rose-400 hover:text-rose-300 px-3 py-1.5 rounded-lg border border-rose-500/30 hover:bg-rose-500/10 transition"
+            >
+              Выйти
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- MAIN CONTENT AREA -->
+      <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- TAB: USERS -->
+        <div v-if="activeTab === 'users'" class="space-y-6">
+          <!-- SEARCH & FILTERS BAR -->
+          <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div class="w-full md:w-96 relative">
+              <input 
+                v-model="userSearchQuery" 
+                type="text" 
+                placeholder="Поиск по ФИО, логину, ID ЮУрГУ, группе..."
+                class="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+              >
+              <span class="absolute left-3 top-2.5 text-slate-500">🔍</span>
+            </div>
+
+            <!-- FILTER CHIPS -->
+            <div class="flex flex-wrap gap-2 w-full md:w-auto">
+              <button 
+                @click="filterStatus = 'all'"
+                :class="filterStatus === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'"
+                class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 transition"
+              >
+                Все ({{ users.length }})
+              </button>
+              <button 
+                @click="filterStatus = 'active'"
+                :class="filterStatus === 'active' ? 'bg-emerald-600/30 text-emerald-400 border-emerald-500/40' : 'text-slate-400 hover:bg-slate-800 border-slate-700'"
+                class="px-3 py-1.5 rounded-lg text-xs font-medium border transition"
+              >
+                🟢 Активные ({{ users.filter(u => !u.is_banned).length }})
+              </button>
+              <button 
+                @click="filterStatus = 'banned'"
+                :class="filterStatus === 'banned' ? 'bg-rose-600/30 text-rose-400 border-rose-500/40' : 'text-slate-400 hover:bg-slate-800 border-slate-700'"
+                class="px-3 py-1.5 rounded-lg text-xs font-medium border transition"
+              >
+                🔴 Заблокированные ({{ users.filter(u => u.is_banned).length }})
+              </button>
+              <button 
+                @click="filterMaterials = filterMaterials === 'blocked' ? 'all' : 'blocked'"
+                :class="filterMaterials === 'blocked' ? 'bg-amber-600/30 text-amber-400 border-amber-500/40' : 'text-slate-400 hover:bg-slate-800 border-slate-700'"
+                class="px-3 py-1.5 rounded-lg text-xs font-medium border transition"
+              >
+                📁 Без материалов ({{ users.filter(u => !u.can_view_materials).length }})
+              </button>
+            </div>
+          </div>
+
+          <!-- USERS TABLE -->
+          <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm text-slate-300">
+                <thead class="bg-slate-900/60 text-xs uppercase text-slate-400 font-semibold border-b border-slate-700">
+                  <tr>
+                    <th class="px-6 py-3">Пользователь</th>
+                    <th class="px-6 py-3">Группа / Направление</th>
+                    <th class="px-6 py-3 text-center">iOS Устройств</th>
+                    <th class="px-6 py-3">Версия / Активность</th>
+                    <th class="px-6 py-3">Статус</th>
+                    <th class="px-6 py-3 text-right">Действия</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700/60">
+                  <tr v-if="filteredUsers.length === 0">
+                    <td colspan="6" class="px-6 py-12 text-center text-slate-500">
+                      Пользователи по заданному запросу не найдены
+                    </td>
+                  </tr>
+                  <tr v-for="user in filteredUsers" :key="user.user_id" class="hover:bg-slate-750 transition">
+                    <!-- USER INFO -->
+                    <td class="px-6 py-4">
+                      <div class="font-medium text-white">{{ user.full_name || 'Студент ЮУрГУ' }}</div>
+                      <div class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                        <span class="font-mono text-blue-400">ID: {{ user.external_user_id || user.user_id.substring(0,8) }}</span>
+                        <span v-if="user.username">• @{{ user.username }}</span>
+                      </div>
+                      <div class="text-[11px] font-mono text-slate-500 mt-0.5 truncate max-w-xs" :title="user.user_id">
+                        UUID: {{ user.user_id }}
+                      </div>
+                    </td>
+
+                    <!-- GROUP -->
+                    <td class="px-6 py-4">
+                      <div class="text-white text-xs font-semibold">{{ user.group_name || 'Не указана' }}</div>
+                      <div class="text-xs text-slate-400 truncate max-w-xs" :title="user.speciality_name">
+                        {{ user.speciality_name || user.unit_name || '—' }}
+                      </div>
+                    </td>
+
+                    <!-- IOS DEVICES COUNT (EXTENSIONS FILTERED OUT) -->
+                    <td class="px-6 py-4 text-center">
+                      <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-900 border border-slate-700 text-slate-200">
+                        📱 {{ getIosDevicesCount(user) }}
+                      </span>
+                    </td>
+
+                    <!-- VERSION & ACTIVITY -->
+                    <td class="px-6 py-4">
+                      <div class="text-xs text-white">v{{ user.app_version || '2.1.0' }}</div>
+                      <div class="text-xs text-slate-400 mt-0.5">{{ formatDate(user.last_active || user.created_at) }}</div>
+                    </td>
+
+                    <!-- STATUS & MATERIALS -->
+                    <td class="px-6 py-4">
+                      <div class="flex flex-col gap-1.5 items-start">
+                        <span 
+                          :class="user.is_banned ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'"
+                          class="px-2 py-0.5 rounded text-[11px] font-medium border"
+                        >
+                          {{ user.is_banned ? 'Заблокирован' : 'Активен' }}
+                        </span>
+                        <span 
+                          :class="user.can_view_materials ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30'"
+                          class="px-2 py-0.5 rounded text-[11px] font-medium border"
+                        >
+                          {{ user.can_view_materials ? 'Материалы разрешены' : 'Материалы закрыты' }}
+                        </span>
+                      </div>
+                    </td>
+
+                    <!-- ACTIONS -->
+                    <td class="px-6 py-4 text-right">
+                      <button 
+                        @click="openUserModal(user)"
+                        class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-medium transition"
+                      >
+                        Управление
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: AUDIT LOG -->
+        <div v-if="activeTab === 'audit'" class="space-y-6">
+          <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex items-center justify-between">
+            <h2 class="text-lg font-bold text-white">Журнал административных действий (admin_audit_log)</h2>
+            <button @click="loadAuditLogs" class="text-xs text-blue-400 hover:underline">Обновить лог</button>
+          </div>
+
+          <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm text-slate-300">
+                <thead class="bg-slate-900/60 text-xs uppercase text-slate-400 font-semibold border-b border-slate-700">
+                  <tr>
+                    <th class="px-6 py-3">Дата / Время (UTC+5)</th>
+                    <th class="px-6 py-3">Администратор</th>
+                    <th class="px-6 py-3">Целевой пользователь</th>
+                    <th class="px-6 py-3">Действие</th>
+                    <th class="px-6 py-3">Изменения (Детали)</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700/60 font-mono text-xs">
+                  <tr v-if="auditLogs.length === 0">
+                    <td colspan="5" class="px-6 py-8 text-center text-slate-500 font-sans">
+                      Записи аудита пока отсутствуют
+                    </td>
+                  </tr>
+                  <tr v-for="log in auditLogs" :key="log.id" class="hover:bg-slate-750">
+                    <td class="px-6 py-3 text-slate-400">{{ formatDate(log.created_at) }}</td>
+                    <td class="px-6 py-3 text-blue-400">{{ log.admin_user_id }}</td>
+                    <td class="px-6 py-3 text-white">{{ log.target_user_id }}</td>
+                    <td class="px-6 py-3 text-emerald-400 font-semibold">{{ log.action }}</td>
+                    <td class="px-6 py-3 text-slate-300 font-sans text-xs">
+                      <pre class="bg-slate-900 p-2 rounded border border-slate-700/80 overflow-x-auto text-[11px]">{{ JSON.stringify(log.details, null, 2) }}</pre>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: STATS -->
+        <div v-if="activeTab === 'stats'" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+            <div class="text-sm text-slate-400">Всего студентов в БД</div>
+            <div class="text-3xl font-extrabold text-white mt-2">{{ users.length }}</div>
+            <div class="text-xs text-emerald-400 mt-2">100% мобильные клиенты ЮУрГУ</div>
+          </div>
+
+          <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+            <div class="text-sm text-slate-400">Активных пользователей</div>
+            <div class="text-3xl font-extrabold text-emerald-400 mt-2">{{ users.filter(u => !u.is_banned).length }}</div>
+            <div class="text-xs text-slate-400 mt-2">Заблокировано: {{ users.filter(u => u.is_banned).length }}</div>
+          </div>
+
+          <div class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+            <div class="text-sm text-slate-400">Доступ к учебным материалам</div>
+            <div class="text-3xl font-extrabold text-blue-400 mt-2">{{ users.filter(u => u.can_view_materials).length }}</div>
+            <div class="text-xs text-slate-400 mt-2">Ограничен: {{ users.filter(u => !u.can_view_materials).length }}</div>
+          </div>
+        </div>
+      </main>
+
+      <!-- USER EDIT MODAL -->
+      <div v-if="selectedUser" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div class="p-6 border-b border-slate-700 flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-bold text-white">{{ selectedUser.full_name || 'Студент' }}</h3>
+              <p class="text-xs text-slate-400 font-mono mt-0.5">UUID: {{ selectedUser.user_id }}</p>
+            </div>
+            <button @click="selectedUser = null" class="text-slate-400 hover:text-white p-2 text-xl">✕</button>
+          </div>
+
+          <div class="p-6 space-y-6">
+            <!-- USER META DETAILS -->
+            <div class="grid grid-cols-2 gap-4 text-xs bg-slate-900/60 p-4 rounded-xl border border-slate-700/60">
+              <div><span class="text-slate-500">ID ЮУрГУ:</span> <span class="text-white font-mono ml-1">{{ selectedUser.external_user_id || '—' }}</span></div>
+              <div><span class="text-slate-500">Логин:</span> <span class="text-white font-mono ml-1">{{ selectedUser.username || '—' }}</span></div>
+              <div><span class="text-slate-500">Группа:</span> <span class="text-white ml-1">{{ selectedUser.group_name || '—' }}</span></div>
+              <div><span class="text-slate-500">Специальность:</span> <span class="text-white ml-1">{{ selectedUser.speciality_name || '—' }}</span></div>
+              <div><span class="text-slate-500">Регистрация:</span> <span class="text-white ml-1">{{ formatDate(selectedUser.created_at) }}</span></div>
+              <div><span class="text-slate-500">Последняя активность:</span> <span class="text-white ml-1">{{ formatDate(selectedUser.last_active) }}</span></div>
+            </div>
+
+            <!-- PERMISSIONS & BAN EDIT FORM -->
+            <div class="space-y-4">
+              <h4 class="text-sm font-semibold text-white uppercase tracking-wider text-slate-400">Управление статусом</h4>
+
+              <!-- BAN TOGGLE -->
+              <div class="flex items-center justify-between p-4 bg-slate-900/40 border border-slate-700 rounded-xl">
+                <div>
+                  <div class="text-sm font-medium text-white">Блокировка аккаунта (is_banned)</div>
+                  <div class="text-xs text-slate-400 mt-0.5">Полная блокировка доступа к приложению Rating Helper</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" v-model="modalBanStatus" class="sr-only peer">
+                  <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                </label>
+              </div>
+
+              <!-- BAN REASON (IF BANNED) -->
+              <div v-if="modalBanStatus">
+                <label class="block text-xs font-semibold text-slate-400 mb-2">Причина блокировки</label>
+                <input 
+                  v-model="modalBanReason" 
+                  type="text" 
+                  placeholder="Укажите причину (нарушение правил, спам и т.д.)"
+                  class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-rose-500"
+                >
+              </div>
+
+              <!-- MATERIALS TOGGLE -->
+              <div class="flex items-center justify-between p-4 bg-slate-900/40 border border-slate-700 rounded-xl">
+                <div>
+                  <div class="text-sm font-medium text-white">Доступ к материалам (can_view_materials)</div>
+                  <div class="text-xs text-slate-400 mt-0.5">Возможность просматривать и скачивать студенческие материалы</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" v-model="modalCanViewMaterials" class="sr-only peer">
+                  <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+            </div>
+
+            <!-- REGISTERED DEVICES -->
+            <div class="space-y-3">
+              <h4 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+                Зарегистрированные iOS-устройства
+              </h4>
+              <div class="bg-slate-900/40 border border-slate-700 rounded-xl p-3 text-xs">
+                <div v-if="userDevices.length === 0" class="text-slate-400 py-2 text-center">
+                  {{ selectedUser.device_info || 'Основное устройство iOS' }} (информация из профиля)
+                </div>
+                <div v-else class="space-y-2">
+                  <div v-for="dev in userDevices" :key="dev.id" class="flex items-center justify-between p-2 bg-slate-800 rounded">
+                    <div>
+                      <div class="font-medium text-white">{{ dev.device_name || 'Apple iPhone' }}</div>
+                      <div class="text-slate-400 text-[11px]">v{{ dev.app_version || '2.1.0' }} • {{ formatDate(dev.last_seen) }}</div>
+                    </div>
+                    <span class="text-emerald-400 text-[11px] font-mono">iOS Native</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="modalError" class="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs">
+              {{ modalError }}
+            </div>
+          </div>
+
+          <div class="p-6 border-t border-slate-700 flex justify-end gap-3">
+            <button 
+              @click="selectedUser = null"
+              class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-sm font-medium transition"
+            >
+              Отмена
+            </button>
+            <button 
+              @click="saveUserChanges"
+              :disabled="isSaving"
+              class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-medium transition shadow-lg shadow-blue-600/30 flex items-center gap-2 disabled:opacity-50"
+            >
+              <span v-if="isSaving" class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+              <span>Сохранить изменения</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // Supabase project config
+    const SUPABASE_URL = "https://ysrkzvqzlvpoeyxmywdd.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_zmYaWaMZW0hEkDeb9R_N8Q_BPJXNG_F";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    createApp({
+      setup() {
+        const adminSecret = ref(sessionStorage.getItem("rh_admin_secret") || "");
+        const isAuthenticated = ref(false);
+        const isAuthenticating = ref(false);
+        const authError = ref(null);
+
+        const activeTab = ref("users");
+        const users = ref([]);
+        const auditLogs = ref([]);
+        const userDevicesList = ref([]);
+        const isLoading = ref(false);
+
+        // Search & Filters
+        const userSearchQuery = ref("");
+        const filterStatus = ref("all");
+        const filterMaterials = ref("all");
+
+        // Modal
+        const selectedUser = ref(null);
+        const modalBanStatus = ref(false);
+        const modalBanReason = ref("");
+        const modalCanViewMaterials = ref(true);
+        const modalError = ref(null);
+        const isSaving = ref(false);
+        const userDevices = ref([]);
+
+        const login = async () => {
+          isAuthenticating.value = true;
+          authError.value = null;
+          try {
+            const { data, error } = await supabase.rpc("verify_admin_credentials", {
+              p_secret: adminSecret.value.trim()
+            });
+
+            if (error || !data || data.success !== true) {
+              // Also test fallback verify_admin_pin for backward compatibility
+              const pinRes = await supabase.rpc("verify_admin_pin", {
+                p_pin: adminSecret.value.trim()
+              });
+              if (pinRes.data === true) {
+                sessionStorage.setItem("rh_admin_secret", adminSecret.value.trim());
+                isAuthenticated.value = true;
+                await refreshData();
+                return;
+              }
+              authError.value = "Неверный мастер-ключ администратора";
+              return;
+            }
+
+            sessionStorage.setItem("rh_admin_secret", adminSecret.value.trim());
+            isAuthenticated.value = true;
+            await refreshData();
+          } catch (err) {
+            authError.value = err.message || "Ошибка подключения к серверу";
+          } finally {
+            isAuthenticating.value = false;
+          }
+        };
+
+        const logout = () => {
+          sessionStorage.removeItem("rh_admin_secret");
+          adminSecret.value = "";
+          isAuthenticated.value = false;
+          users.value = [];
+          auditLogs.value = [];
+        };
+
+        const refreshData = async () => {
+          isLoading.value = true;
+          await Promise.all([loadUsers(), loadAuditLogs(), loadDevices()]);
+          isLoading.value = false;
+        };
+
+        const loadUsers = async () => {
+          try {
+            const { data, error } = await supabase
+              .from("app_users")
+              .select("*")
+              .order("last_active", { ascending: false });
+            if (!error && data) {
+              users.value = data;
+            }
+          } catch (e) {
+            console.error("Error loading users:", e);
+          }
+        };
+
+        const loadAuditLogs = async () => {
+          try {
+            const { data, error } = await supabase
+              .from("admin_audit_log")
+              .select("*")
+              .order("created_at", { ascending: false })
+              .limit(100);
+            if (!error && data) {
+              auditLogs.value = data;
+            }
+          } catch (e) {
+            console.error("Error loading audit logs:", e);
+          }
+        };
+
+        const loadDevices = async () => {
+          try {
+            const { data, error } = await supabase
+              .from("user_devices")
+              .select("*");
+            if (!error && data) {
+              userDevicesList.value = data;
+            }
+          } catch (e) {
+            console.error("Devices table might not exist yet:", e);
+          }
+        };
+
+        const getIosDevicesCount = (user) => {
+          // Strictly count iOS mobile devices, completely excluding browser extensions
+          const registered = userDevicesList.value.filter(d => 
+            d.user_id === user.user_id && 
+            !d.device_type?.toLowerCase().includes("extension") &&
+            !d.device_name?.toLowerCase().includes("extension") &&
+            !d.device_name?.toLowerCase().includes("chrome")
+          );
+          if (registered.length > 0) return registered.length;
+          // Fallback to profile device_info
+          if (user.device_info && !user.device_info.toLowerCase().includes("extension")) {
+            return 1;
+          }
+          return 1;
+        };
+
+        const filteredUsers = computed(() => {
+          return users.value.filter(u => {
+            // Status filter
+            if (filterStatus.value === 'active' && u.is_banned) return false;
+            if (filterStatus.value === 'banned' && !u.is_banned) return false;
+
+            // Materials filter
+            if (filterMaterials.value === 'blocked' && u.can_view_materials) return false;
+
+            // Search query
+            const q = userSearchQuery.value.trim().toLowerCase();
+            if (!q) return true;
+
+            const name = (u.full_name || '').toLowerCase();
+            const username = (u.username || '').toLowerCase();
+            const extId = (u.external_user_id || '').toLowerCase();
+            const uuid = (u.user_id || '').toLowerCase();
+            const group = (u.group_name || '').toLowerCase();
+
+            return name.includes(q) || username.includes(q) || extId.includes(q) || uuid.includes(q) || group.includes(q);
+          });
+        });
+
+        const openUserModal = (user) => {
+          selectedUser.value = user;
+          modalBanStatus.value = !!user.is_banned;
+          modalBanReason.value = user.ban_reason || "Нарушение правил сообщества";
+          modalCanViewMaterials.value = user.can_view_materials !== false;
+          modalError.value = null;
+
+          // Filter devices for user (excluding extensions)
+          userDevices.value = userDevicesList.value.filter(d => 
+            d.user_id === user.user_id && 
+            !d.device_type?.toLowerCase().includes("extension")
+          );
+        };
+
+        const saveUserChanges = async () => {
+          if (!selectedUser.value) return;
+          isSaving.value = true;
+          modalError.value = null;
+
+          try {
+            // Invoke admin RPC v2 or v1
+            const { data, error } = await supabase.rpc("admin_set_user_status_v2", {
+              p_master_secret: adminSecret.value.trim(),
+              p_admin_user_id: "web_admin",
+              p_target_user_id: selectedUser.value.user_id,
+              p_is_banned: modalBanStatus.value,
+              p_ban_reason: modalBanStatus.value ? modalBanReason.value : null,
+              p_can_view_materials: modalCanViewMaterials.value
+            });
+
+            if (error) {
+              // Fallback to v1
+              const v1Res = await supabase.rpc("admin_set_user_status", {
+                p_admin_user_id: "web_admin",
+                p_target_user_id: selectedUser.value.user_id,
+                p_is_banned: modalBanStatus.value,
+                p_ban_reason: modalBanStatus.value ? modalBanReason.value : null,
+                p_can_view_materials: modalCanViewMaterials.value
+              });
+              if (v1Res.error) throw v1Res.error;
+            }
+
+            // Update local state
+            selectedUser.value.is_banned = modalBanStatus.value;
+            selectedUser.value.ban_reason = modalBanStatus.value ? modalBanReason.value : null;
+            selectedUser.value.can_view_materials = modalCanViewMaterials.value;
+
+            const idx = users.value.findIndex(u => u.user_id === selectedUser.value.user_id);
+            if (idx !== -1) {
+              users.value[idx].is_banned = modalBanStatus.value;
+              users.value[idx].ban_reason = selectedUser.value.ban_reason;
+              users.value[idx].can_view_materials = modalCanViewMaterials.value;
+            }
+
+            selectedUser.value = null;
+            await loadAuditLogs();
+          } catch (err) {
+            modalError.value = "Ошибка сохранения: " + (err.message || err);
+          } finally {
+            isSaving.value = false;
+          }
+        };
+
+        const formatDate = (isoStr) => {
+          if (!isoStr) return "—";
+          try {
+            const d = new Date(isoStr);
+            return d.toLocaleString("ru-RU", { 
+              timeZone: "Asia/Yekaterinburg",
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit"
+            });
+          } catch (e) {
+            return isoStr;
+          }
+        };
+
+        onMounted(() => {
+          if (adminSecret.value) {
+            login();
+          }
+        });
+
+        return {
+          adminSecret,
+          isAuthenticated,
+          isAuthenticating,
+          authError,
+          activeTab,
+          users,
+          auditLogs,
+          isLoading,
+          userSearchQuery,
+          filterStatus,
+          filterMaterials,
+          filteredUsers,
+          selectedUser,
+          modalBanStatus,
+          modalBanReason,
+          modalCanViewMaterials,
+          modalError,
+          isSaving,
+          userDevices,
+          login,
+          logout,
+          refreshData,
+          loadAuditLogs,
+          getIosDevicesCount,
+          openUserModal,
+          saveUserChanges,
+          formatDate
+        };
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>

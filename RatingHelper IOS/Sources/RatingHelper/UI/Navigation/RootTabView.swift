@@ -14,6 +14,11 @@ public struct RootTabView: View {
                             Label("Дисциплины", systemImage: "books.vertical.fill")
                         }
 
+                    ScheduleView()
+                        .tabItem {
+                            Label("Расписание", systemImage: "calendar")
+                        }
+
                     TasksView()
                         .tabItem {
                             Label("План", systemImage: "checklist")

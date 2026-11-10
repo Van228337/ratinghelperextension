@@ -110,8 +110,11 @@ public struct SemesterDashboardView: View {
 
                                         Spacer()
 
+                                        let type = AssessmentType.parse(item.assessmentType)
+                                        let eval = AcademicEvaluation.evaluate(percentage: item.rating, assessmentType: type)
                                         GradeBadgeView(
                                             grade: AcademicGrade.from(percentage: item.rating),
+                                            evaluation: eval,
                                             customText: "\(String(format: "%.1f", item.rating))%",
                                             small: true
                                         )

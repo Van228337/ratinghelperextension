@@ -119,13 +119,38 @@ public actor LocalStore {
         write(Array(hidden), to: "hidden_subjects.json")
     }
 
+    // MARK: - Sync Timestamps
+    public func loadSyncDate(key: String) -> Date? {
+        read(Date.self, from: "sync_ts_\(key).json")
+    }
+
+    public func saveSyncDate(key: String, date: Date = Date()) {
+        write(date, to: "sync_ts_\(key).json")
+    }
+
+    public func formattedLastSync(key: String) -> String? {
+        guard let d = loadSyncDate(key: key) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.timeZone = TimeZone(identifier: "Asia/Yekaterinburg") ?? .current
+        formatter.dateFormat = "d MMM в HH:mm"
+        return formatter.string(from: d)
+    }
+
     // MARK: - Subjects Cache
     public func loadSubjects(term: Int) -> [Subject]? {
         read([Subject].self, from: "subjects_term_\(term).json")
     }
 
     public func saveSubjects(_ subjects: [Subject], term: Int) {
+        // Guaranteed protection: empty response never overwrites non-empty cache!
+        if subjects.isEmpty {
+            if let existing = loadSubjects(term: term), !existing.isEmpty {
+                return
+            }
+        }
         write(subjects, to: "subjects_term_\(term).json")
+        saveSyncDate(key: "subjects_term_\(term)")
     }
 
     // MARK: - Journal Cache
@@ -134,7 +159,15 @@ public actor LocalStore {
     }
 
     public func saveJournal(_ journal: JournalData) {
+        // Guaranteed protection: empty continuous assignments never wipe existing cached journal!
+        if journal.currentControl.isEmpty && journal.labs.isEmpty && journal.courseWorksOrProjects.isEmpty {
+            if let existing = loadJournal(disciplineId: journal.disciplineId, term: journal.term),
+               (!existing.currentControl.isEmpty || !existing.labs.isEmpty || !existing.courseWorksOrProjects.isEmpty) {
+                return
+            }
+        }
         write(journal, to: "journal_\(journal.disciplineId)_\(journal.term).json")
+        saveSyncDate(key: "journal_\(journal.disciplineId)_\(journal.term)")
     }
 
     // MARK: - Simulation Drafts
@@ -206,5 +239,36 @@ public actor LocalStore {
             votes.removeValue(forKey: reviewId)
         }
         write(votes, to: "review_votes.json")
+    }
+
+    // MARK: - Schedule Cache
+    public func loadSchedule(groupId: String) -> [ScheduleLesson]? {
+        read([ScheduleLesson].self, from: "schedule_\(groupId).json")
+    }
+
+    public func saveSchedule(groupId: String, lessons: [ScheduleLesson]) {
+        // Guaranteed protection: empty lessons never wipe existing cached schedule!
+        if lessons.isEmpty {
+            if let existing = loadSchedule(groupId: groupId), !existing.isEmpty {
+                return
+            }
+        }
+        write(lessons, to: "schedule_\(groupId).json")
+        saveSyncDate(key: "schedule_\(groupId)")
+    }
+
+    // MARK: - Moodle Events Cache
+    public func loadMoodleEvents(year: Int, month: Int) -> [MoodleCalendarEvent]? {
+        read([MoodleCalendarEvent].self, from: "moodle_events_\(year)_\(month).json")
+    }
+
+    public func saveMoodleEvents(_ events: [MoodleCalendarEvent], year: Int, month: Int) {
+        if events.isEmpty {
+            if let existing = loadMoodleEvents(year: year, month: month), !existing.isEmpty {
+                return
+            }
+        }
+        write(events, to: "moodle_events_\(year)_\(month).json")
+        saveSyncDate(key: "moodle_events_\(year)_\(month)")
     }
 }

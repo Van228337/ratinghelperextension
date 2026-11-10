@@ -81,6 +81,32 @@ public struct SubjectsView: View {
                 .padding(.vertical, 10)
                 .background(AppTheme.cardBackground)
 
+                // Индикатор синхронизации и офлайн-режима
+                if appState.isOfflineMode {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wifi.slash")
+                            .font(.caption2)
+                        Text("Офлайн-режим • Синхронизировано: \(appState.lastSyncDescription ?? "сохранено ранее")")
+                            .font(.caption2.weight(.medium))
+                    }
+                    .foregroundColor(.orange)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .background(Color.orange.opacity(0.12))
+                } else if let sync = appState.lastSyncDescription {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(AppTheme.successGreen)
+                        Text("Синхронизировано: \(sync)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal)
+                    .padding(.vertical, 3)
+                }
+
                 Divider()
 
                 if appState.isLoading && appState.subjects.isEmpty {
@@ -134,7 +160,7 @@ public struct SubjectsView: View {
                             } header: {
                                 HStack(spacing: 8) {
                                     Image(systemName: group.0.icon)
-                                    Text(group.0.rawValue)
+                                    Text(group.0 == .unknown ? "Другие дисциплины" : group.0.rawValue)
                                 }
                                 .font(.headline)
                                 .foregroundStyle(group.0.badgeColor)

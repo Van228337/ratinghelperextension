@@ -10,8 +10,12 @@ public enum APIEndpoints {
         "https://online.susu.ru/microgateway/api/StudyActivity/Subjects/\(term)/ru"
     }
 
-    public static func journal(disciplineId: String, term: Int) -> String {
-        "https://online.susu.ru/microgateway/api/StudyActivity/Journal/\(disciplineId)/\(term)/IsCourseWorkOrProject/false/ru"
+    public static func journal(disciplineId: String, term: Int, isCourseWork: Bool = false) -> String {
+        "https://online.susu.ru/microgateway/api/StudyActivity/Journal/\(disciplineId)/\(term)/IsCourseWorkOrProject/\(isCourseWork ? "true" : "false")/ru"
+    }
+
+    public static func groupSchedule(groupId: String) -> String {
+        "https://online.susu.ru/microgateway/api/Schedule/GetGroupSchedule/\(groupId)"
     }
 
     public static let supabaseURL = "https://ysrkzvqzlvpoeyxmywdd.supabase.co"

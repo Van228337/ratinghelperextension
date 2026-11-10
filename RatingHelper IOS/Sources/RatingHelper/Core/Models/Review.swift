@@ -117,3 +117,56 @@ public struct TeacherStats: Codable, Hashable, Sendable {
         )
     }
 }
+
+public struct TeacherDisciplineItem: Codable, Hashable, Sendable {
+    public let disciplineId: String?
+    public let disciplineName: String?
+
+    public init(disciplineId: String? = nil, disciplineName: String? = nil) {
+        self.disciplineId = disciplineId
+        self.disciplineName = disciplineName
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case disciplineId = "discipline_id"
+        case disciplineName = "discipline_name"
+    }
+}
+
+public struct TeacherCardData: Codable, Sendable {
+    public let id: String?
+    public let fullName: String
+    public let department: String?
+    public let photoUrl: String?
+    public let disciplines: [TeacherDisciplineItem]?
+    public let stats: TeacherStats?
+    public let summary: TeacherSummary?
+
+    public init(
+        id: String? = nil,
+        fullName: String,
+        department: String? = nil,
+        photoUrl: String? = nil,
+        disciplines: [TeacherDisciplineItem]? = nil,
+        stats: TeacherStats? = nil,
+        summary: TeacherSummary? = nil
+    ) {
+        self.id = id
+        self.fullName = fullName
+        self.department = department
+        self.photoUrl = photoUrl
+        self.disciplines = disciplines
+        self.stats = stats
+        self.summary = summary
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case fullName = "full_name"
+        case department
+        case photoUrl = "photo_url"
+        case disciplines
+        case stats
+        case summary
+    }
+}

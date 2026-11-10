@@ -1,1 +1,10 @@
-﻿google_apps_script_backend.js
+google_apps_script_backend.js
+.DS_Store
+*.swp
+*~
+.build/
+.bsp/
+.sourcekit-lsp/
+.xtool-tmp/
+RatingHelper.app/
+*.app/

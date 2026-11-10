@@ -1,9 +1,110 @@
 import Foundation
 
+public struct SusuStudentRaw: Codable, Sendable {
+    public let unitId: String?
+    public let unitName: String?
+    public let unitShortName: String?
+    public let parentId: String?
+    public let parentName: String?
+    public let parentShortName: String?
+    public let educationLevel: String?
+    public let specialityCode: String?
+    public let specialityName: String?
+    public let groupId: String?
+    public let groupName: String?
+    public let studyYears: String?
+    public let educationForm: String?
+    public let mobilePhone: String?
+
+    enum CodingKeys: String, CodingKey {
+        case unitId, unitName, unitShortName, parentId, parentName, parentShortName
+        case educationLevel, specialityCode, specialityName, groupId, groupName
+        case studyYears, educationForm, mobilePhone
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        unitId = Self.decodeString(c, .unitId)
+        unitName = try? c.decodeIfPresent(String.self, forKey: .unitName)
+        unitShortName = try? c.decodeIfPresent(String.self, forKey: .unitShortName)
+        parentId = Self.decodeString(c, .parentId)
+        parentName = try? c.decodeIfPresent(String.self, forKey: .parentName)
+        parentShortName = try? c.decodeIfPresent(String.self, forKey: .parentShortName)
+        educationLevel = try? c.decodeIfPresent(String.self, forKey: .educationLevel)
+        specialityCode = try? c.decodeIfPresent(String.self, forKey: .specialityCode)
+        specialityName = try? c.decodeIfPresent(String.self, forKey: .specialityName)
+        groupId = Self.decodeString(c, .groupId)
+        groupName = try? c.decodeIfPresent(String.self, forKey: .groupName)
+        studyYears = try? c.decodeIfPresent(String.self, forKey: .studyYears)
+        educationForm = try? c.decodeIfPresent(String.self, forKey: .educationForm)
+        mobilePhone = try? c.decodeIfPresent(String.self, forKey: .mobilePhone)
+    }
+
+    private static func decodeString(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> String? {
+        if let s = try? c.decode(String.self, forKey: key) { return s }
+        if let i = try? c.decode(Int.self, forKey: key) { return String(i) }
+        return nil
+    }
+
+    public func toStudentProfile() -> StudentProfile {
+        StudentProfile(
+            unitId: unitId,
+            unitName: unitName,
+            unitShortName: unitShortName,
+            parentId: parentId,
+            parentName: parentName,
+            parentShortName: parentShortName,
+            educationLevel: educationLevel,
+            specialityCode: specialityCode,
+            specialityName: specialityName,
+            groupId: groupId,
+            groupName: groupName,
+            studyYears: studyYears,
+            educationForm: educationForm
+        )
+    }
+}
+
 public struct LoginResponse: Codable, Sendable {
     public let isLogged: Bool?
     public let accessToken: String?
     public let refreshToken: String?
+    public let id: String?
+    public let userName: String?
+    public let email: String?
+    public let susuEmail: String?
+    public let photo: String?
+    public let firstName: String?
+    public let middleName: String?
+    public let lastName: String?
+    public let student: [SusuStudentRaw]?
+
+    enum CodingKeys: String, CodingKey {
+        case isLogged, accessToken, refreshToken, id, userName, email, susuEmail, photo
+        case firstName, middleName, lastName, student
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        isLogged = try? c.decodeIfPresent(Bool.self, forKey: .isLogged)
+        accessToken = try? c.decodeIfPresent(String.self, forKey: .accessToken)
+        refreshToken = try? c.decodeIfPresent(String.self, forKey: .refreshToken)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            id = String(i)
+        } else {
+            id = nil
+        }
+        userName = try? c.decodeIfPresent(String.self, forKey: .userName)
+        email = try? c.decodeIfPresent(String.self, forKey: .email)
+        susuEmail = try? c.decodeIfPresent(String.self, forKey: .susuEmail)
+        photo = try? c.decodeIfPresent(String.self, forKey: .photo)
+        firstName = try? c.decodeIfPresent(String.self, forKey: .firstName)
+        middleName = try? c.decodeIfPresent(String.self, forKey: .middleName)
+        lastName = try? c.decodeIfPresent(String.self, forKey: .lastName)
+        student = try? c.decodeIfPresent([SusuStudentRaw].self, forKey: .student)
+    }
 }
 
 public actor SusuAuthService {
@@ -23,9 +124,11 @@ public actor SusuAuthService {
     public func restoreSavedSession() async -> UserSession? {
         if let stored = await store.loadSession() {
             session = stored
-            // If rememberMe was checked, try to read refresh_token from Keychain
             if stored.rememberMe, let secureRefreshToken = keychain.readString(key: "susu_refresh_token") {
                 session?.refreshToken = secureRefreshToken
+            }
+            if let savedIdentity = keychain.readString(key: "susu_identity"), !savedIdentity.isEmpty {
+                session?.identity = savedIdentity
             }
             return session
         }
@@ -38,7 +141,17 @@ public actor SusuAuthService {
     }
 
     public func login(login: String, password: String, rememberMe: Bool) async throws -> UserSession {
-        let identity = session?.identity.isEmpty == false ? (session?.identity ?? generateIdentity()) : generateIdentity()
+        let savedIdentity = keychain.readString(key: "susu_identity")
+        let identity: String
+        if let savedIdentity, !savedIdentity.isEmpty {
+            identity = savedIdentity
+        } else if let curId = session?.identity, !curId.isEmpty {
+            identity = curId
+            _ = keychain.saveString(key: "susu_identity", value: identity)
+        } else {
+            identity = generateIdentity()
+            _ = keychain.saveString(key: "susu_identity", value: identity)
+        }
 
         guard let url = URL(string: APIEndpoints.loginAPI) else {
             throw NetworkError.invalidURL(APIEndpoints.loginAPI)
@@ -73,18 +186,36 @@ public actor SusuAuthService {
         let refreshToken = resp.refreshToken ?? ""
         let exp = UserSession.parseJWTExpiration(token)
 
+        let profiles = resp.student?.map { $0.toStudentProfile() } ?? []
+        let primaryProfile = profiles.first
+
+        let fullName = [resp.lastName, resp.firstName, resp.middleName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
         let newSession = UserSession(
-            username: login,
+            username: resp.userName ?? login,
             identity: identity,
             accessToken: token,
             refreshToken: refreshToken,
             tokenExp: exp,
             rememberMe: rememberMe,
-            lastLoginDate: Date()
+            lastLoginDate: Date(),
+            externalUserId: resp.id,
+            fullName: fullName.isEmpty ? nil : fullName,
+            email: resp.email,
+            susuEmail: resp.susuEmail,
+            studentProfile: primaryProfile,
+            allProfiles: profiles
         )
 
         self.session = newSession
         await store.saveSession(newSession)
+
+        if let extId = resp.id {
+            _ = keychain.saveString(key: "susu_external_user_id", value: extId)
+        }
 
         if rememberMe {
             _ = keychain.saveString(key: "susu_username", value: login)
@@ -141,6 +272,9 @@ public actor SusuAuthService {
             if current.rememberMe {
                 _ = keychain.saveString(key: "susu_refresh_token", value: newRef)
             }
+        }
+        if let newId = resp.id {
+            current.externalUserId = newId
         }
 
         self.session = current

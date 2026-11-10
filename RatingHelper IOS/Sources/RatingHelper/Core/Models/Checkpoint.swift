@@ -17,6 +17,7 @@ public struct CheckpointItem: Identifiable, Codable, Hashable, Sendable {
     public var weight: Double
     public var rating: Double
     public var materialsCount: Int
+    public var sectionType: String?
 
     public var percentage: Double {
         max > 0 ? (current / max) * 100.0 : 0.0
@@ -33,7 +34,8 @@ public struct CheckpointItem: Identifiable, Codable, Hashable, Sendable {
         max: Double,
         weight: Double,
         rating: Double = 0.0,
-        materialsCount: Int = 0
+        materialsCount: Int = 0,
+        sectionType: String? = nil
     ) {
         self.backendId = backendId
         self.title = title
@@ -42,15 +44,16 @@ public struct CheckpointItem: Identifiable, Codable, Hashable, Sendable {
         self.weight = weight
         self.rating = rating
         self.materialsCount = materialsCount
+        self.sectionType = sectionType
     }
 
     private var localKey: String {
-        "local:\(title)|\(String(format: "%.4f", weight))|\(String(format: "%.4f", max))"
+        "local:\(sectionType ?? "default")|\(title)|\(String(format: "%.4f", weight))|\(String(format: "%.4f", max))"
     }
 
     enum CodingKeys: String, CodingKey {
         case backendId
-        case title, current, max, weight, rating, materialsCount
+        case title, current, max, weight, rating, materialsCount, sectionType
     }
 }
 
@@ -63,12 +66,18 @@ public struct RawJournalRow: Codable, Sendable {
 }
 
 public struct RawJournalResponse: Codable, Sendable {
+    public let id: String?
+    public let isCredit: Bool?
     public let disciplineName: String?
     public let currentRating: Double?
     public let totalRating: Double?
     public let currentControl: [RawJournalRow]?
     public let bonuses: [RawJournalRow]?
     public let attestation: [RawJournalRow]?
+    public let courseWorksOrProjects: [RawJournalRow]?
+    public let labs: [RawJournalRow]?
+    public let hasAgreement: Bool?
+    public let agreementRating: Double?
 }
 
 public struct BonusInfo: Codable, Hashable, Sendable {

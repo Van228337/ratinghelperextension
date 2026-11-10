@@ -262,7 +262,15 @@ function isSiteDarkTheme() {
 }
 
 // === ИНФОРМАТИВНЫЙ ИНТЕРАКТИВНЫЙ ВИДЖЕТ (ФИЧА 6) ===
-function getAcademicGradeInline(pct) {
+function getAcademicGradeInline(pct, assessmentType = "") {
+  if (assessmentType === "Зачёт") {
+    if (pct >= 59.01) {
+      return { label: "Зачтено", badgeBg: "#14532d", badgeText: "#86efac", lightBg: "#dcfce7", lightText: "#15803d" };
+    } else {
+      return { label: "Не зачтено", badgeBg: "#7f1d1d", badgeText: "#fca5a5", lightBg: "#fee2e2", lightText: "#b91c1c" };
+    }
+  }
+
   if (pct >= 84.01) return { label: "Отлично (5)", badgeBg: "#14532d", badgeText: "#86efac", lightBg: "#dcfce7", lightText: "#15803d" };
   if (pct >= 74.01) return { label: "Хорошо (4)", badgeBg: "#1e3a8a", badgeText: "#93c5fd", lightBg: "#dbeafe", lightText: "#1d4ed8" };
   if (pct >= 59.01) return { label: "Удовлетворительно (3)", badgeBg: "#78350f", badgeText: "#fde68a", lightBg: "#fef3c7", lightText: "#b45309" };
@@ -399,7 +407,7 @@ function renderInlineWidget() {
     const maxPotential = totalWeight > 0 ? (lockedTotal + remWeight * 100) / totalWeight : rating;
 
     const isDark = isSiteDarkTheme();
-    const grade = getAcademicGradeInline(rating);
+    const grade = getAcademicGradeInline(rating, assessmentType);
 
     // Сохраняем в историю без мусора в названии
     const cleanName = getCleanSubjectName();
@@ -450,14 +458,22 @@ function renderInlineWidget() {
 
     // Подсказка до следующей цели
     let goalText = "";
-    if (rating < 59.01) {
-      goalText = `До зачёта (3): <span>+${(59.01 - rating).toFixed(1)}%</span>`;
-    } else if (rating < 74.01) {
-      goalText = `До четвёрки (4): <span>+${(74.01 - rating).toFixed(1)}%</span>`;
-    } else if (rating < 84.01) {
-      goalText = `До пятёрки (5): <span>+${(84.01 - rating).toFixed(1)}%</span>`;
+    if (assessmentType === "Зачёт") {
+      if (rating >= 59.01) {
+        goalText = `<span>Зачёт получен!</span>`;
+      } else {
+        goalText = `До зачёта: <span>+${(59.01 - rating).toFixed(1)}%</span>`;
+      }
     } else {
-      goalText = `<span>Пятёрка обеспечена!</span>`;
+      if (rating < 59.01) {
+        goalText = `До тройки (3): <span>+${(59.01 - rating).toFixed(1)}%</span>`;
+      } else if (rating < 74.01) {
+        goalText = `До четвёрки (4): <span>+${(74.01 - rating).toFixed(1)}%</span>`;
+      } else if (rating < 84.01) {
+        goalText = `До пятёрки (5): <span>+${(84.01 - rating).toFixed(1)}%</span>`;
+      } else {
+        goalText = `<span>Пятёрка обеспечена!</span>`;
+      }
     }
 
     const pillBg = isDark ? grade.badgeBg : grade.lightBg;

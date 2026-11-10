@@ -70,7 +70,7 @@ public actor SusuJournalService {
         }
     }
 
-    public func fetchJournal(disciplineId: String, term: Int) async throws -> JournalData {
+    public func fetchJournal(disciplineId: String, term: Int, isCourseWork: Bool = false) async throws -> JournalData {
         var token: String
         do {
             token = try await auth.validToken()
@@ -82,25 +82,30 @@ public actor SusuJournalService {
             throw error
         }
 
-        guard let url = URL(string: APIEndpoints.journal(disciplineId: disciplineId, term: term)) else {
-            throw NetworkError.invalidURL(APIEndpoints.journal(disciplineId: disciplineId, term: term))
+        func requestJournal(isCw: Bool) async throws -> RawJournalResponse {
+            guard let url = URL(string: APIEndpoints.journal(disciplineId: disciplineId, term: term, isCourseWork: isCw)) else {
+                throw NetworkError.invalidURL(APIEndpoints.journal(disciplineId: disciplineId, term: term, isCourseWork: isCw))
+            }
+            do {
+                return try await client.requestJSON(url: url, headers: authHeaders(token: token))
+            } catch NetworkError.unauthorized {
+                let refreshed = try await auth.refreshToken()
+                token = refreshed.accessToken
+                return try await client.requestJSON(url: url, headers: authHeaders(token: token))
+            }
         }
 
         do {
             var raw: RawJournalResponse
             do {
-                raw = try await client.requestJSON(
-                    url: url,
-                    headers: authHeaders(token: token)
-                )
-            } catch NetworkError.unauthorized {
-                // Try refresh token once
-                let refreshed = try await auth.refreshToken()
-                token = refreshed.accessToken
-                raw = try await client.requestJSON(
-                    url: url,
-                    headers: authHeaders(token: token)
-                )
+                raw = try await requestJournal(isCw: isCourseWork)
+            } catch {
+                // If primary request failed, try opposite isCourseWork flag
+                if let fallback = try? await requestJournal(isCw: !isCourseWork) {
+                    raw = fallback
+                } else {
+                    throw error
+                }
             }
 
             let journal = JournalData.from(raw: raw, disciplineId: disciplineId, term: term)

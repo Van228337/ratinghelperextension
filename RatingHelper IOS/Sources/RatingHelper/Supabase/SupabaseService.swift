@@ -16,47 +16,113 @@ public struct SupabaseCheckpoint: Identifiable, Codable, Sendable {
     }
 }
 
-public struct SupabaseAppUser: Codable, Sendable {
+public struct SupabaseAppUser: Codable, Sendable, Identifiable {
+    public var id: String { userId }
     public let userId: String
+    public var externalUserId: String?
+    public var username: String?
+    public var fullName: String?
+    public var email: String?
+    public var susuEmail: String?
+    public var groupName: String?
+    public var specialityName: String?
+    public var unitName: String?
+    public var educationLevel: String?
+    public var educationForm: String?
+    public var studyYears: String?
     public var deviceInfo: String?
     public var isBanned: Bool
+    public var banReason: String?
     public var canViewMaterials: Bool
     public var isAdmin: Bool
     public var lastActive: String?
+    public var appVersion: String?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
+        case externalUserId = "external_user_id"
+        case username
+        case fullName = "full_name"
+        case email
+        case susuEmail = "susu_email"
+        case groupName = "group_name"
+        case specialityName = "speciality_name"
+        case unitName = "unit_name"
+        case educationLevel = "education_level"
+        case educationForm = "education_form"
+        case studyYears = "study_years"
         case deviceInfo = "device_info"
         case isBanned = "is_banned"
+        case banReason = "ban_reason"
         case canViewMaterials = "can_view_materials"
         case isAdmin = "is_admin"
         case lastActive = "last_active"
+        case appVersion = "app_version"
     }
 
     public init(
         userId: String,
+        externalUserId: String? = nil,
+        username: String? = nil,
+        fullName: String? = nil,
+        email: String? = nil,
+        susuEmail: String? = nil,
+        groupName: String? = nil,
+        specialityName: String? = nil,
+        unitName: String? = nil,
+        educationLevel: String? = nil,
+        educationForm: String? = nil,
+        studyYears: String? = nil,
         deviceInfo: String? = nil,
         isBanned: Bool = false,
+        banReason: String? = nil,
         canViewMaterials: Bool = true,
         isAdmin: Bool = false,
-        lastActive: String? = nil
+        lastActive: String? = nil,
+        appVersion: String? = nil
     ) {
         self.userId = userId
+        self.externalUserId = externalUserId
+        self.username = username
+        self.fullName = fullName
+        self.email = email
+        self.susuEmail = susuEmail
+        self.groupName = groupName
+        self.specialityName = specialityName
+        self.unitName = unitName
+        self.educationLevel = educationLevel
+        self.educationForm = educationForm
+        self.studyYears = studyYears
         self.deviceInfo = deviceInfo
         self.isBanned = isBanned
+        self.banReason = banReason
         self.canViewMaterials = canViewMaterials
         self.isAdmin = isAdmin
         self.lastActive = lastActive
+        self.appVersion = appVersion
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.userId = try container.decode(String.self, forKey: .userId)
+        self.externalUserId = try container.decodeIfPresent(String.self, forKey: .externalUserId)
+        self.username = try container.decodeIfPresent(String.self, forKey: .username)
+        self.fullName = try container.decodeIfPresent(String.self, forKey: .fullName)
+        self.email = try container.decodeIfPresent(String.self, forKey: .email)
+        self.susuEmail = try container.decodeIfPresent(String.self, forKey: .susuEmail)
+        self.groupName = try container.decodeIfPresent(String.self, forKey: .groupName)
+        self.specialityName = try container.decodeIfPresent(String.self, forKey: .specialityName)
+        self.unitName = try container.decodeIfPresent(String.self, forKey: .unitName)
+        self.educationLevel = try container.decodeIfPresent(String.self, forKey: .educationLevel)
+        self.educationForm = try container.decodeIfPresent(String.self, forKey: .educationForm)
+        self.studyYears = try container.decodeIfPresent(String.self, forKey: .studyYears)
         self.deviceInfo = try container.decodeIfPresent(String.self, forKey: .deviceInfo)
         self.isBanned = (try? container.decodeIfPresent(Bool.self, forKey: .isBanned)) ?? false
+        self.banReason = try container.decodeIfPresent(String.self, forKey: .banReason)
         self.canViewMaterials = (try? container.decodeIfPresent(Bool.self, forKey: .canViewMaterials)) ?? true
         self.isAdmin = (try? container.decodeIfPresent(Bool.self, forKey: .isAdmin)) ?? false
         self.lastActive = try container.decodeIfPresent(String.self, forKey: .lastActive)
+        self.appVersion = try container.decodeIfPresent(String.self, forKey: .appVersion)
     }
 }
 
@@ -69,6 +135,7 @@ public struct RatingHistoryPoint: Identifiable, Codable, Hashable, Sendable {
     public let id: String
     public let userId: String
     public let term: Int
+    public let subjectId: String?
     public let rating: Double
     public let recordedAt: String
 
@@ -76,8 +143,25 @@ public struct RatingHistoryPoint: Identifiable, Codable, Hashable, Sendable {
         case id
         case userId = "user_id"
         case term
+        case subjectId = "subject_id"
         case rating
         case recordedAt = "recorded_at"
+    }
+
+    public init(
+        id: String = UUID().uuidString,
+        userId: String,
+        term: Int,
+        subjectId: String? = nil,
+        rating: Double,
+        recordedAt: String = ISO8601DateFormatter().string(from: Date())
+    ) {
+        self.id = id
+        self.userId = userId
+        self.term = term
+        self.subjectId = subjectId
+        self.rating = rating
+        self.recordedAt = recordedAt
     }
 }
 
@@ -117,8 +201,8 @@ public actor SupabaseService {
         }
     }
 
-    // MARK: - Rating history
-    public func loadRatingHistory(userId: String, term: Int, from: Date? = nil) async -> [RatingHistoryPoint] {
+    // MARK: - 2. Rating History (Overall & Per Subject)
+    public func loadRatingHistory(userId: String, term: Int, subjectId: String? = nil, from: Date? = nil) async -> [RatingHistoryPoint] {
         guard !userId.isEmpty, term > 0,
               var components = URLComponents(string: "\(url)/rest/v1/rating_history") else { return [] }
         var queryItems = [
@@ -127,6 +211,11 @@ public actor SupabaseService {
             URLQueryItem(name: "order", value: "recorded_at.asc"),
             URLQueryItem(name: "select", value: "*")
         ]
+        if let sId = subjectId, !sId.isEmpty, UUID(uuidString: sId) != nil {
+            queryItems.append(URLQueryItem(name: "subject_id", value: "eq.\(sId)"))
+        } else {
+            queryItems.append(URLQueryItem(name: "subject_id", value: "is.null"))
+        }
         if let from {
             queryItems.append(URLQueryItem(name: "recorded_at", value: "gte.\(ISO8601DateFormatter().string(from: from))"))
         }
@@ -135,19 +224,24 @@ public actor SupabaseService {
         return (try? await client.requestJSON(url: requestURL, headers: defaultHeaders())) ?? []
     }
 
-    public func recordOverallRating(userId: String, term: Int, rating: Double) async {
+    public func recordRatingPoint(userId: String, term: Int, subjectId: String? = nil, rating: Double) async {
         guard !userId.isEmpty, term > 0, rating.isFinite else { return }
         let rounded = (rating * 100).rounded() / 100
-        let history = await loadRatingHistory(userId: userId, term: term)
+        let history = await loadRatingHistory(userId: userId, term: term, subjectId: subjectId)
         if let last = history.last, abs(last.rating - rounded) < 0.005 { return }
         guard let requestURL = URL(string: "\(url)/rest/v1/rating_history") else { return }
-        let payload: [[String: Any]] = [[
+
+        var item: [String: Any] = [
             "user_id": userId,
             "term": term,
             "rating": rounded,
             "recorded_at": ISO8601DateFormatter().string(from: Date())
-        ]]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        ]
+        if let sId = subjectId, UUID(uuidString: sId) != nil {
+            item["subject_id"] = sId
+        }
+
+        guard let body = try? JSONSerialization.data(withJSONObject: [item]) else { return }
         do {
             _ = try await client.request(url: requestURL, method: "POST", headers: defaultHeaders(prefer: "return=minimal"), body: body)
         } catch {
@@ -155,7 +249,11 @@ public actor SupabaseService {
         }
     }
 
-    // MARK: - 2. Subject & Checkpoints Sync
+    public func recordOverallRating(userId: String, term: Int, rating: Double) async {
+        await recordRatingPoint(userId: userId, term: term, subjectId: nil, rating: rating)
+    }
+
+    // MARK: - 3. Subject & Checkpoints Sync
     public func syncSubjectData(
         subjectId: String,
         subjectName: String,
@@ -166,9 +264,6 @@ public actor SupabaseService {
             return []
         }
 
-        // Metadata is written through one narrowly scoped SECURITY DEFINER RPC.
-        // Direct REST upserts under the publishable key are rejected by RLS and
-        // were the source of the repeated 42501/401 errors in the logs.
         guard let rpcURL = URL(string: "\(url)/rest/v1/rpc/sync_subject_metadata") else {
             return await getCheckpoints(subjectId: subjectId)
         }
@@ -188,8 +283,6 @@ public actor SupabaseService {
                 body: body
             )
         } catch {
-            // Keep the journal usable when the migration has not been deployed,
-            // but leave a precise diagnostic instead of hiding the failure.
             print("Supabase metadata sync failed (RPC sync_subject_metadata): \(error.localizedDescription)")
             return await getCheckpoints(subjectId: subjectId)
         }
@@ -206,7 +299,7 @@ public actor SupabaseService {
         }
     }
 
-    // MARK: - 3. Materials
+    // MARK: - 4. Materials
     public func getMaterialsCountForSubject(subjectId: String) async -> [String: Int] {
         struct Item: Decodable {
             let checkpoint_id: String?
@@ -229,10 +322,25 @@ public actor SupabaseService {
         }
     }
 
-    public func getMaterialsForCheckpoint(checkpointId: String) async -> [MaterialItem] {
-        guard UUID(uuidString: checkpointId) != nil,
-              let reqUrl = URL(string: "\(url)/rest/v1/materials?checkpoint_id=eq.\(checkpointId)&select=*") else {
-            print("Supabase materials read skipped: checkpoint id is not a UUID")
+    public func getMaterialsForCheckpoint(checkpointId: String, userId: String? = nil) async -> [MaterialItem] {
+        guard UUID(uuidString: checkpointId) != nil else {
+            return []
+        }
+
+        // 1. Попытка через защищённый RPC с проверкой прав пользователя
+        if let uId = userId, !uId.isEmpty, let rpcURL = URL(string: "\(url)/rest/v1/rpc/get_accessible_materials") {
+            let payload: [String: Any] = [
+                "p_user_id": uId,
+                "p_checkpoint_id": checkpointId
+            ]
+            if let body = try? JSONSerialization.data(withJSONObject: payload),
+               let list: [MaterialItem] = try? await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: body) {
+                return list.sorted { $0.relevanceScore > $1.relevanceScore }
+            }
+        }
+
+        // 2. Резервный запрос при ожидании применения миграции v2
+        guard let reqUrl = URL(string: "\(url)/rest/v1/materials?checkpoint_id=eq.\(checkpointId)&select=*") else {
             return []
         }
         do {
@@ -308,14 +416,10 @@ public actor SupabaseService {
         let wasDown = previousVote == "down"
 
         if (isUpvote && wasUp) || (!isUpvote && wasDown) {
-            // Отмена текущего голоса
             if isUpvote { up = max(0, up - 1) } else { down = max(0, down - 1) }
         } else {
-            // Откат противоположного голоса
             if wasUp { up = max(0, up - 1) }
             if wasDown { down = max(0, down - 1) }
-
-            // Применение нового
             if isUpvote { up += 1 } else { down += 1 }
         }
 
@@ -332,7 +436,7 @@ public actor SupabaseService {
         return (up, down)
     }
 
-    // MARK: - 4. Teacher Reviews & Stats
+    // MARK: - 5. Teacher Reviews & Stats
     public func getTeacherReviews(teacherName: String) async -> ([TeacherReview], TeacherStats?) {
         guard let encoded = teacherName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews?teacher_name=eq.\(encoded)&order=created_at.desc") else {
@@ -365,9 +469,6 @@ public actor SupabaseService {
             "dislikes": 0
         ]
 
-        // КРИТИЧЕСКИЙ ФИКС: subject_id в базе данных PostgreSQL является типом UUID.
-        // Передача пустой строки "" приводит к ошибке: invalid input syntax for type uuid: ""
-        // Если subjectId не является валидным UUID, не передаем его вообще (PostgreSQL запишет NULL).
         if let sId = review.subjectId, !sId.isEmpty, UUID(uuidString: sId) != nil {
             dict["subject_id"] = sId
         }
@@ -383,9 +484,6 @@ public actor SupabaseService {
             return first
         }
 
-        // `resolution=ignore-duplicates` makes a retry safe. If the first
-        // request committed and the response was lost, return the existing row
-        // instead of telling the user that publication failed.
         guard let existingURL = URL(string: "\(url)/rest/v1/teacher_reviews?id=eq.\(review.id)&select=*") else {
             throw NetworkError.decodingError("Не удалось подтвердить сохранение отзыва")
         }
@@ -418,7 +516,6 @@ public actor SupabaseService {
         } else {
             if wasUp { likes = max(0, likes - 1) }
             if wasDown { dislikes = max(0, dislikes - 1) }
-
             if isUpvote { likes += 1 } else { dislikes += 1 }
         }
 
@@ -435,7 +532,7 @@ public actor SupabaseService {
         return (likes, dislikes)
     }
 
-    // MARK: - 5. Teacher Summary
+    // MARK: - 6. Teacher Summary
     public func getTeacherSummary(teacherName: String) async -> TeacherSummary? {
         guard let encoded = teacherName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let reqUrl = URL(string: "\(url)/rest/v1/teacher_summaries?teacher_name=eq.\(encoded)&select=*") else {
@@ -467,7 +564,102 @@ public actor SupabaseService {
         }
     }
 
-    // MARK: - 6. User Profile & Admin RPC
+    public func getTeacherCard(teacherName: String) async -> TeacherCardData? {
+        guard let reqUrl = URL(string: "\(url)/rest/v1/rpc/get_teacher_card") else { return nil }
+        do {
+            let bodyData = try JSONSerialization.data(withJSONObject: ["p_teacher_name": teacherName])
+            let card: TeacherCardData = try await client.requestJSON(
+                url: reqUrl,
+                method: "POST",
+                headers: defaultHeaders(),
+                body: bodyData
+            )
+            return card
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - 7. User Resolution & Admin RPC
+    public func resolveOrRegisterUser(
+        externalUserId: String,
+        externalIdentity: String? = nil,
+        username: String? = nil,
+        fullName: String? = nil,
+        email: String? = nil,
+        susuEmail: String? = nil,
+        groupId: String? = nil,
+        groupName: String? = nil,
+        specialityCode: String? = nil,
+        specialityName: String? = nil,
+        unitName: String? = nil,
+        educationLevel: String? = nil,
+        educationForm: String? = nil,
+        studyYears: String? = nil,
+        appVersion: String? = "2.1.0",
+        deviceInfo: String? = "iPhone / iOS Native"
+    ) async -> SupabaseAppUser {
+        struct ResolveResp: Decodable {
+            let user_id: String
+            let is_banned: Bool
+            let ban_reason: String?
+            let can_view_materials: Bool
+            let is_admin: Bool
+            let full_name: String?
+            let group_name: String?
+        }
+
+        if let rpcURL = URL(string: "\(url)/rest/v1/rpc/resolve_or_register_user") {
+            let payload: [String: Any] = [
+                "p_external_user_id": externalUserId,
+                "p_external_identity": externalIdentity ?? NSNull(),
+                "p_username": username ?? NSNull(),
+                "p_full_name": fullName ?? NSNull(),
+                "p_email": email ?? NSNull(),
+                "p_susu_email": susuEmail ?? NSNull(),
+                "p_group_id": groupId ?? NSNull(),
+                "p_group_name": groupName ?? NSNull(),
+                "p_speciality_code": specialityCode ?? NSNull(),
+                "p_speciality_name": specialityName ?? NSNull(),
+                "p_unit_name": unitName ?? NSNull(),
+                "p_education_level": educationLevel ?? NSNull(),
+                "p_education_form": educationForm ?? NSNull(),
+                "p_study_years": studyYears ?? NSNull(),
+                "p_app_version": appVersion ?? "2.1.0",
+                "p_device_info": deviceInfo ?? "iPhone / iOS Native"
+            ]
+
+            if let body = try? JSONSerialization.data(withJSONObject: payload),
+               let list: [ResolveResp] = try? await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: body),
+               let first = list.first {
+                return SupabaseAppUser(
+                    userId: first.user_id,
+                    externalUserId: externalUserId,
+                    username: username,
+                    fullName: first.full_name ?? fullName,
+                    email: email,
+                    susuEmail: susuEmail,
+                    groupName: first.group_name ?? groupName,
+                    specialityName: specialityName,
+                    unitName: unitName,
+                    educationLevel: educationLevel,
+                    educationForm: educationForm,
+                    studyYears: studyYears,
+                    deviceInfo: deviceInfo,
+                    isBanned: first.is_banned,
+                    banReason: first.ban_reason,
+                    canViewMaterials: first.can_view_materials,
+                    isAdmin: first.is_admin,
+                    lastActive: ISO8601DateFormatter().string(from: Date()),
+                    appVersion: appVersion
+                )
+            }
+        }
+
+        // Fallback если RPC еще не развернут
+        return await getUserProfile(userId: externalUserId)
+    }
+
     public func getUserProfile(userId: String) async -> SupabaseAppUser {
         guard let reqUrl = URL(string: "\(url)/rest/v1/app_users?user_id=eq.\(userId)&select=*") else {
             return SupabaseAppUser(userId: userId, isBanned: false, canViewMaterials: true, isAdmin: false)
@@ -475,7 +667,6 @@ public actor SupabaseService {
         do {
             let users: [SupabaseAppUser] = try await client.requestJSON(url: reqUrl, headers: defaultHeaders())
             if let existing = users.first {
-                // Обновляем last_active
                 if let patchUrl = URL(string: "\(url)/rest/v1/app_users?user_id=eq.\(userId)"),
                    let patchData = try? JSONSerialization.data(withJSONObject: ["last_active": ISO8601DateFormatter().string(from: Date())]) {
                     _ = try? await client.request(url: patchUrl, method: "PATCH", headers: defaultHeaders(prefer: "return=minimal"), body: patchData)
@@ -483,7 +674,6 @@ public actor SupabaseService {
                 return existing
             }
 
-            // Регистрируем нового пользователя (без передачи is_admin, чтобы избежать падения, если колонка еще не создана миграцией)
             let newUser = SupabaseAppUser(
                 userId: userId,
                 deviceInfo: "iOS Native App",
@@ -525,7 +715,7 @@ public actor SupabaseService {
         }
     }
 
-    // MARK: - 7. Admin Methods
+    // MARK: - 8. Admin Methods & Security Verification
     public func getAllUsers() async -> [SupabaseAppUser] {
         guard let reqUrl = URL(string: "\(url)/rest/v1/app_users?order=last_active.desc") else { return [] }
         return (try? await client.requestJSON(url: reqUrl, headers: defaultHeaders())) ?? []
@@ -549,6 +739,43 @@ public actor SupabaseService {
     public func deleteMaterial(id: String) async throws {
         guard let reqUrl = URL(string: "\(url)/rest/v1/materials?id=eq.\(id)") else { return }
         _ = try await client.request(url: reqUrl, method: "DELETE", headers: defaultHeaders(prefer: "return=representation"))
+    }
+
+    public func adminSetUserStatus(
+        adminUserId: String,
+        targetUserId: String,
+        isBanned: Bool? = nil,
+        banReason: String? = nil,
+        canViewMaterials: Bool? = nil
+    ) async throws -> Bool {
+        if let rpcURL = URL(string: "\(url)/rest/v1/rpc/admin_set_user_status") {
+            var payload: [String: Any] = [
+                "p_admin_user_id": adminUserId,
+                "p_target_user_id": targetUserId
+            ]
+            if let b = isBanned { payload["p_is_banned"] = b }
+            if let r = banReason { payload["p_ban_reason"] = r }
+            if let m = canViewMaterials { payload["p_can_view_materials"] = m }
+
+            if let body = try? JSONSerialization.data(withJSONObject: payload),
+               let res: Bool = try? await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: body) {
+                return res
+            }
+        }
+
+        // Fallback: direct PATCH if RPC not yet deployed
+        var updates: [String: Any] = [:]
+        if let b = isBanned {
+            updates["is_banned"] = b
+            updates["ban_reason"] = b ? (banReason ?? "Заблокирован администратором") : NSNull()
+        }
+        if let m = canViewMaterials {
+            updates["can_view_materials"] = m
+        }
+        guard !updates.isEmpty, let patchUrl = URL(string: "\(url)/rest/v1/app_users?user_id=eq.\(targetUserId)") else { return false }
+        let body = try JSONSerialization.data(withJSONObject: updates)
+        _ = try await client.request(url: patchUrl, method: "PATCH", headers: defaultHeaders(prefer: "return=representation"), body: body)
+        return true
     }
 
     public func updateUser(userId: String, updates: [String: Any]) async throws {

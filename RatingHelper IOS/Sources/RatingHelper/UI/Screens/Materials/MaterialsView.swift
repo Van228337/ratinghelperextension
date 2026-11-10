@@ -14,6 +14,7 @@ public struct ActivityView: UIViewControllerRepresentable {
 
 public struct MaterialsView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     public let checkpoint: CheckpointItem
     public let subjectId: String
     public let teacherName: String
@@ -64,8 +65,21 @@ public struct MaterialsView: View {
                         .padding(.horizontal)
                     }
 
-                    // Materials List
-                    if isLoading && materials.isEmpty {
+                    if let appUser = appState.appUser, !appUser.canViewMaterials {
+                        VStack(spacing: 12) {
+                            Image(systemName: "lock.shield.fill")
+                                .font(.system(size: 48))
+                                .foregroundColor(.orange)
+                            Text("Доступ к материалам ограничен")
+                                .font(.headline)
+                            Text("Возможность просмотра и скачивания материалов для вашей учётной записи отключена администратором системы.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
+                        }
+                        .padding(.vertical, 40)
+                    } else if isLoading && materials.isEmpty {
                         ProgressView()
                             .padding(.top, 40)
                     } else if materials.isEmpty {
@@ -105,6 +119,7 @@ public struct MaterialsView: View {
                     } label: {
                         Label("Загрузить", systemImage: "arrow.up.doc.fill")
                     }
+                    .disabled(appState.isBanned || appState.appUser?.canViewMaterials == false)
                 }
             }
             .task {
@@ -129,7 +144,10 @@ public struct MaterialsView: View {
 
     private func loadMaterials() async {
         isLoading = true
-        let list = await SupabaseService.shared.getMaterialsForCheckpoint(checkpointId: checkpoint.id)
+        let list = await SupabaseService.shared.getMaterialsForCheckpoint(
+            checkpointId: checkpoint.id,
+            userId: appState.effectiveUserId
+        )
         self.materials = list
         self.userVotes = await LocalStore.shared.loadMaterialVotes()
         isLoading = false
@@ -260,6 +278,11 @@ public struct MaterialsView: View {
     }
 
     private func openOrDownload(_ item: MaterialItem) {
+        if let appUser = appState.appUser, !appUser.canViewMaterials {
+            downloadErrorMessage = "Доступ к материалам ограничен администратором"
+            return
+        }
+
         guard let url = URL(string: item.fileUrl) else {
             downloadErrorMessage = "Некорректная ссылка на файл"
             return

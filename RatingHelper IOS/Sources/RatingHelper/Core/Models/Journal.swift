@@ -9,8 +9,15 @@ public struct JournalData: Codable, Hashable, Sendable {
     public var currentControl: [CheckpointItem]
     public var bonuses: [CheckpointItem]
     public var attestation: [CheckpointItem]
+    public var courseWorksOrProjects: [CheckpointItem]
+    public var labs: [CheckpointItem]
     public var bonusInfo: BonusInfo
     public var lastUpdated: Date
+
+    /// All graded assignments that contribute to continuous control (current control + labs + courseworks)
+    public var allContinuousAssignments: [CheckpointItem] {
+        currentControl + labs + courseWorksOrProjects
+    }
 
     public init(
         disciplineId: String,
@@ -21,6 +28,8 @@ public struct JournalData: Codable, Hashable, Sendable {
         currentControl: [CheckpointItem],
         bonuses: [CheckpointItem],
         attestation: [CheckpointItem],
+        courseWorksOrProjects: [CheckpointItem] = [],
+        labs: [CheckpointItem] = [],
         bonusInfo: BonusInfo = BonusInfo(),
         lastUpdated: Date = Date()
     ) {
@@ -32,6 +41,8 @@ public struct JournalData: Codable, Hashable, Sendable {
         self.currentControl = currentControl
         self.bonuses = bonuses
         self.attestation = attestation
+        self.courseWorksOrProjects = courseWorksOrProjects
+        self.labs = labs
         self.bonusInfo = bonusInfo
         self.lastUpdated = lastUpdated
     }
@@ -39,7 +50,7 @@ public struct JournalData: Codable, Hashable, Sendable {
     public static func from(raw: RawJournalResponse, disciplineId: String, term: Int) -> JournalData {
         let name = Subject.cleanName(raw.disciplineName ?? "Предмет")
         
-        func mapRows(_ rows: [RawJournalRow]?) -> [CheckpointItem] {
+        func mapRows(_ rows: [RawJournalRow]?, sectionType: String) -> [CheckpointItem] {
             guard let rows = rows else { return [] }
             return rows.compactMap { r -> CheckpointItem? in
                 guard let title = r.name?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
@@ -50,14 +61,17 @@ public struct JournalData: Codable, Hashable, Sendable {
                     current: r.point ?? 0.0,
                     max: r.maxPoint ?? 0.0,
                     weight: r.weight ?? 0.0,
-                    rating: r.rating ?? 0.0
+                    rating: r.rating ?? 0.0,
+                    sectionType: sectionType
                 )
             }
         }
 
-        let currentControl = mapRows(raw.currentControl)
-        let bonuses = mapRows(raw.bonuses)
-        let attestation = mapRows(raw.attestation)
+        let currentControl = mapRows(raw.currentControl, sectionType: "currentControl")
+        let bonuses = mapRows(raw.bonuses, sectionType: "bonuses")
+        let attestation = mapRows(raw.attestation, sectionType: "attestation")
+        let courseWorksOrProjects = mapRows(raw.courseWorksOrProjects, sectionType: "coursework")
+        let labs = mapRows(raw.labs, sectionType: "labs")
 
         // Bonus calculation logic from website app.py
         var bonusPoints = 0.0
@@ -89,6 +103,8 @@ public struct JournalData: Codable, Hashable, Sendable {
             currentControl: currentControl,
             bonuses: bonuses,
             attestation: attestation,
+            courseWorksOrProjects: courseWorksOrProjects,
+            labs: labs,
             bonusInfo: bonusInfo
         )
     }

@@ -3,15 +3,22 @@ import SwiftUI
 public struct TargetGoalView: View {
     public let result: TargetGoalResult
     public let selectedTarget: Double
+    public var assessmentType: AssessmentType = .unknown
     public let onSelectTarget: (Double) -> Void
     public let onApplyScores: ([Double]) -> Void
     public let onApplyExam: (Double) -> Void
 
-    private let targets: [(title: String, val: Double)] = [
-        ("Зачёт (3) 59%", 59.01),
-        ("Хорошо (4) 74%", 74.01),
-        ("Отлично (5) 84%", 84.01)
-    ]
+    private var targets: [(title: String, val: Double)] {
+        if assessmentType == .zachet {
+            return [("Зачёт 59%", 59.01)]
+        } else {
+            return [
+                ("Удовл (3) 59%", 59.01),
+                ("Хорошо (4) 74%", 74.01),
+                ("Отлично (5) 84%", 84.01)
+            ]
+        }
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {

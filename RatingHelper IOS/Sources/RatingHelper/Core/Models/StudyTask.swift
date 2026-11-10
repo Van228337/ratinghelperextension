@@ -65,6 +65,33 @@ public enum TaskStatus: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum TaskSourceType: String, Codable, CaseIterable, Identifiable, Sendable {
+    case manual = "manual"
+    case checkpoint = "checkpoint"
+    case moodle = "moodle"
+    case schedule = "schedule"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .manual: return "Вручную"
+        case .checkpoint: return "Контрольная точка"
+        case .moodle: return "Moodle Дедлайн"
+        case .schedule: return "Расписание"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .manual: return "square.and.pencil"
+        case .checkpoint: return "flag.fill"
+        case .moodle: return "graduationcap.fill"
+        case .schedule: return "calendar"
+        }
+    }
+}
+
 public enum TaskReminderOption: String, Codable, CaseIterable, Identifiable, Sendable {
     case onDay = "on_day"
     case dayBefore = "day_before"
@@ -111,13 +138,22 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
     public var disciplineName: String?
     public var checkpointId: String?
     public var checkpointTitle: String?
+    public var termNumber: Int?
+    public var sourceDeadline: Date?
+    public var customDeadline: Date?
     public var dueDate: Date?
+    public var externalSource: TaskSourceType
+    public var externalId: String?
     public var priority: TaskPriority
     public var status: TaskStatus
     public var reminderOptions: [TaskReminderOption]
     public var customReminderDate: Date?
     public var createdAt: Date
     public var completedAt: Date?
+
+    public var effectiveDeadline: Date? {
+        customDeadline ?? sourceDeadline ?? dueDate
+    }
 
     public init(
         id: UUID = UUID(),
@@ -127,7 +163,12 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
         disciplineName: String? = nil,
         checkpointId: String? = nil,
         checkpointTitle: String? = nil,
+        termNumber: Int? = nil,
+        sourceDeadline: Date? = nil,
+        customDeadline: Date? = nil,
         dueDate: Date? = nil,
+        externalSource: TaskSourceType = .manual,
+        externalId: String? = nil,
         priority: TaskPriority = .normal,
         status: TaskStatus = .notStarted,
         reminderOptions: [TaskReminderOption] = [.onDay],
@@ -142,7 +183,12 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
         self.disciplineName = disciplineName
         self.checkpointId = checkpointId
         self.checkpointTitle = checkpointTitle
-        self.dueDate = dueDate
+        self.termNumber = termNumber
+        self.sourceDeadline = sourceDeadline
+        self.customDeadline = customDeadline
+        self.dueDate = dueDate ?? customDeadline ?? sourceDeadline
+        self.externalSource = externalSource
+        self.externalId = externalId
         self.priority = priority
         self.status = status
         self.reminderOptions = reminderOptions
@@ -152,24 +198,24 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
     }
 
     public var isOverdue: Bool {
-        guard let due = dueDate, status != .completed else { return false }
+        guard let due = effectiveDeadline, status != .completed else { return false }
         return due < Date()
     }
 
     public var isDueToday: Bool {
-        guard let due = dueDate, status != .completed else { return false }
+        guard let due = effectiveDeadline, status != .completed else { return false }
         return Calendar.current.isDateInToday(due)
     }
 
     public var isDueUpcoming: Bool {
-        guard let due = dueDate, status != .completed else { return false }
+        guard let due = effectiveDeadline, status != .completed else { return false }
         let now = Date()
         let inWeek = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
         return due > now && due <= inWeek && !Calendar.current.isDateInToday(due)
     }
 
     public var isDueLater: Bool {
-        guard let due = dueDate, status != .completed else { return false }
+        guard let due = effectiveDeadline, status != .completed else { return false }
         let inWeek = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
         return due > inWeek
     }

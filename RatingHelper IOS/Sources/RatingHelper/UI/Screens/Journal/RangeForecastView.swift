@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct RangeForecastView: View {
     public let forecast: RangeForecastResult
+    public var assessmentType: AssessmentType = .unknown
 
     public var body: some View {
         HStack {
@@ -21,7 +22,7 @@ public struct RangeForecastView: View {
                     .foregroundColor(.secondary)
                 Text(String(format: "%.1f%%", forecast.currentRating))
                     .font(.subheadline.weight(.bold))
-                    .foregroundColor(AcademicGrade.from(percentage: forecast.currentRating).color)
+                    .foregroundColor(AcademicEvaluation.evaluate(percentage: forecast.currentRating, assessmentType: assessmentType).color)
             }
             .frame(maxWidth: .infinity, alignment: .center)
 

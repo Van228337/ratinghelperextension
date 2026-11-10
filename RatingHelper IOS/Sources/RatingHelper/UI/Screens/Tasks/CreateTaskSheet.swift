@@ -34,15 +34,12 @@ public struct CreateTaskSheet: View {
     }
 
     private var availableCheckpoints: [String] {
-        if let j = appState.currentJournal, j.disciplineId == selectedSubjectId {
-            return j.currentControl.map { $0.title }
-        }
-        return []
+        availableCheckpointItems.map { $0.title }
     }
 
     private var availableCheckpointItems: [CheckpointItem] {
         if let j = appState.currentJournal, j.disciplineId == selectedSubjectId {
-            return j.currentControl
+            return j.allContinuousAssignments + j.attestation
         }
         return []
     }
@@ -93,7 +90,12 @@ public struct CreateTaskSheet: View {
                             }
                         }
                         .onChange(of: selectedCheckpointTitle) { _, newTitle in
-                            selectedCheckpointId = availableCheckpointItems.first(where: { $0.title == newTitle })?.backendId ?? ""
+                            if let match = availableCheckpointItems.first(where: { $0.title == newTitle }) {
+                                selectedCheckpointId = match.backendId ?? ""
+                                if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || availableCheckpoints.contains(title) {
+                                    title = match.title
+                                }
+                            }
                         }
                     } else if !selectedCheckpointTitle.isEmpty {
                         HStack {
@@ -201,7 +203,7 @@ public struct CreateTaskSheet: View {
                 self.selectedCheckpointTitle = cp.title
                 self.selectedCheckpointId = cp.backendId ?? ""
                 if self.title.isEmpty {
-                    self.title = "Сдать: \(cp.title)"
+                    self.title = cp.title
                 }
             }
         }
@@ -228,6 +230,7 @@ public struct CreateTaskSheet: View {
                 updated.disciplineName = selectedSubjectName.isEmpty ? nil : selectedSubjectName
                 updated.checkpointTitle = selectedCheckpointTitle.isEmpty ? nil : selectedCheckpointTitle
                 updated.checkpointId = selectedCheckpointId.isEmpty ? nil : selectedCheckpointId
+                updated.customDeadline = finalDue
                 updated.dueDate = finalDue
                 updated.priority = priority
                 updated.status = status
@@ -247,7 +250,12 @@ public struct CreateTaskSheet: View {
                     disciplineName: selectedSubjectName.isEmpty ? nil : selectedSubjectName,
                     checkpointId: selectedCheckpointId.isEmpty ? nil : selectedCheckpointId,
                     checkpointTitle: selectedCheckpointTitle.isEmpty ? nil : selectedCheckpointTitle,
+                    termNumber: appState.selectedTerm,
+                    sourceDeadline: finalDue,
+                    customDeadline: finalDue,
                     dueDate: finalDue,
+                    externalSource: selectedCheckpointId.isEmpty ? .manual : .checkpoint,
+                    externalId: selectedCheckpointId.isEmpty ? nil : "checkpoint_\(selectedCheckpointId)",
                     priority: priority,
                     status: status,
                     reminderOptions: reminders
