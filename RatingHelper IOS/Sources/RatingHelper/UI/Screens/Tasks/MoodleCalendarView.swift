@@ -111,7 +111,7 @@ public struct MoodleCalendarView: View {
                 updateAddedEventIds()
                 await loadEvents(forceRefresh: false)
             }
-            .onChange(of: taskManager.tasks) { _ in
+            .onChange(of: taskManager.tasks) { _, _ in
                 updateAddedEventIds()
             }
         }

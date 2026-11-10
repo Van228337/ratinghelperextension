@@ -38,11 +38,21 @@
             <input 
               v-model="adminSecret" 
               type="password" 
-              placeholder="••••••••••••••••" 
+              placeholder="rh_admin_susu_2026" 
               required
               class="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
               :disabled="isAuthenticating"
             >
+            <p class="text-xs text-slate-500 mt-2 flex items-center justify-between">
+              <span>Ключ по умолчанию:</span>
+              <button 
+                type="button" 
+                @click="adminSecret = 'rh_admin_susu_2026'" 
+                class="text-blue-400 hover:text-blue-300 font-mono transition underline"
+              >
+                rh_admin_susu_2026
+              </button>
+            </p>
           </div>
 
           <div v-if="authError" class="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs flex items-center gap-2">
@@ -444,7 +454,44 @@
     // Supabase project config
     const SUPABASE_URL = "https://ysrkzvqzlvpoeyxmywdd.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_zmYaWaMZW0hEkDeb9R_N8Q_BPJXNG_F";
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let supabase = null;
+    try {
+      if (window.supabase && typeof window.supabase.createClient === "function") {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      }
+    } catch (e) {
+      console.warn("Supabase SDK init notice:", e);
+    }
+
+    // Direct REST helper: guarantees execution even if unpkg CDN is blocked or unavailable
+    async function supabaseFetch(endpoint, options = {}) {
+      const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+      const headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      };
+      const res = await fetch(url, { ...options, headers });
+      if (!res.ok) {
+        let errBody;
+        try { errBody = await res.json(); } catch(e) { errBody = await res.text(); }
+        const msg = errBody?.message || errBody?.hint || (typeof errBody === 'string' ? errBody : `HTTP ${res.status}`);
+        throw new Error(msg);
+      }
+      return await res.json();
+    }
+
+    async function rpcCall(fnName, params = {}) {
+      if (supabase) {
+        const { data, error } = await supabase.rpc(fnName, params);
+        if (!error && data !== null && data !== undefined) return data;
+      }
+      return await supabaseFetch(`rpc/${fnName}`, {
+        method: "POST",
+        body: JSON.stringify(params)
+      });
+    }
 
     createApp({
       setup() {
@@ -476,29 +523,35 @@
         const login = async () => {
           isAuthenticating.value = true;
           authError.value = null;
+          const secret = adminSecret.value.trim();
+          if (!secret) {
+            authError.value = "Введите мастер-ключ администратора";
+            isAuthenticating.value = false;
+            return;
+          }
           try {
-            const { data, error } = await supabase.rpc("verify_admin_credentials", {
-              p_secret: adminSecret.value.trim()
-            });
+            let res = null;
+            try {
+              res = await rpcCall("verify_admin_credentials", { p_secret: secret });
+            } catch (rpcErr) {
+              console.warn("verify_admin_credentials error, testing verify_admin_pin fallback:", rpcErr);
+            }
 
-            if (error || !data || data.success !== true) {
-              // Also test fallback verify_admin_pin for backward compatibility
-              const pinRes = await supabase.rpc("verify_admin_pin", {
-                p_pin: adminSecret.value.trim()
-              });
-              if (pinRes.data === true) {
-                sessionStorage.setItem("rh_admin_secret", adminSecret.value.trim());
-                isAuthenticated.value = true;
-                await refreshData();
-                return;
+            if (!res || res.success !== true) {
+              const pinRes = await rpcCall("verify_admin_pin", { p_pin: secret }).catch(() => false);
+              if (pinRes === true) {
+                res = { success: true };
               }
-              authError.value = "Неверный мастер-ключ администратора";
+            }
+
+            if (res && res.success === true) {
+              sessionStorage.setItem("rh_admin_secret", secret);
+              isAuthenticated.value = true;
+              await refreshData();
               return;
             }
 
-            sessionStorage.setItem("rh_admin_secret", adminSecret.value.trim());
-            isAuthenticated.value = true;
-            await refreshData();
+            authError.value = "Неверный мастер-ключ администратора. По умолчанию: rh_admin_susu_2026";
           } catch (err) {
             authError.value = err.message || "Ошибка подключения к серверу";
           } finally {
@@ -521,13 +574,35 @@
         };
 
         const loadUsers = async () => {
+          const secret = adminSecret.value.trim();
           try {
-            const { data, error } = await supabase
-              .from("app_users")
-              .select("*")
-              .order("last_active", { ascending: false });
-            if (!error && data) {
-              users.value = data;
+            // 1. Попытка вызвать защищённый RPC get_admin_users (SECURITY DEFINER)
+            try {
+              const rpcUsers = await rpcCall("get_admin_users", { p_secret: secret });
+              if (Array.isArray(rpcUsers)) {
+                users.value = rpcUsers;
+                return;
+              }
+            } catch (e) {
+              console.warn("get_admin_users RPC unavailable, trying direct table query:", e);
+            }
+
+            // 2. Прямой запрос к таблице app_users через клиент
+            if (supabase) {
+              const { data, error } = await supabase
+                .from("app_users")
+                .select("*")
+                .order("last_active", { ascending: false });
+              if (!error && Array.isArray(data)) {
+                users.value = data;
+                return;
+              }
+            }
+
+            // 3. Fallback через прямой fetch
+            const fetchUsers = await supabaseFetch("app_users?select=*&order=last_active.desc");
+            if (Array.isArray(fetchUsers)) {
+              users.value = fetchUsers;
             }
           } catch (e) {
             console.error("Error loading users:", e);
@@ -535,14 +610,36 @@
         };
 
         const loadAuditLogs = async () => {
+          const secret = adminSecret.value.trim();
           try {
-            const { data, error } = await supabase
-              .from("admin_audit_log")
-              .select("*")
-              .order("created_at", { ascending: false })
-              .limit(100);
-            if (!error && data) {
-              auditLogs.value = data;
+            // 1. Попытка вызвать защищённый RPC get_admin_audit_log (SECURITY DEFINER, обход RLS)
+            try {
+              const rpcLogs = await rpcCall("get_admin_audit_log", { p_secret: secret });
+              if (Array.isArray(rpcLogs)) {
+                auditLogs.value = rpcLogs;
+                return;
+              }
+            } catch (e) {
+              console.warn("get_admin_audit_log RPC unavailable, trying table query:", e);
+            }
+
+            // 2. Запрос к таблице admin_audit_log
+            if (supabase) {
+              const { data, error } = await supabase
+                .from("admin_audit_log")
+                .select("*")
+                .order("created_at", { ascending: false })
+                .limit(100);
+              if (!error && Array.isArray(data)) {
+                auditLogs.value = data;
+                return;
+              }
+            }
+
+            // 3. Fallback через fetch
+            const fetchLogs = await supabaseFetch("admin_audit_log?select=*&order=created_at.desc&limit=100");
+            if (Array.isArray(fetchLogs)) {
+              auditLogs.value = fetchLogs;
             }
           } catch (e) {
             console.error("Error loading audit logs:", e);
@@ -551,8 +648,21 @@
 
         const loadDevices = async () => {
           try {
-            const { data, error } = await supabase
-              .from("user_devices")
+            if (supabase) {
+              const { data, error } = await supabase.from("user_devices").select("*");
+              if (!error && Array.isArray(data)) {
+                userDevicesList.value = data;
+                return;
+              }
+            }
+            const fetchDevices = await supabaseFetch("user_devices?select=*").catch(() => []);
+            if (Array.isArray(fetchDevices)) {
+              userDevicesList.value = fetchDevices;
+            }
+          } catch (e) {
+            console.warn("Devices table might not exist yet:", e);
+          }
+        };
               .select("*");
             if (!error && data) {
               userDevicesList.value = data;
@@ -621,26 +731,30 @@
           modalError.value = null;
 
           try {
-            // Invoke admin RPC v2 or v1
-            const { data, error } = await supabase.rpc("admin_set_user_status_v2", {
-              p_master_secret: adminSecret.value.trim(),
-              p_admin_user_id: "web_admin",
-              p_target_user_id: selectedUser.value.user_id,
-              p_is_banned: modalBanStatus.value,
-              p_ban_reason: modalBanStatus.value ? modalBanReason.value : null,
-              p_can_view_materials: modalCanViewMaterials.value
-            });
-
-            if (error) {
-              // Fallback to v1
-              const v1Res = await supabase.rpc("admin_set_user_status", {
+            // Invoke admin RPC v2
+            let success = false;
+            try {
+              const res = await rpcCall("admin_set_user_status_v2", {
+                p_master_secret: adminSecret.value.trim(),
                 p_admin_user_id: "web_admin",
                 p_target_user_id: selectedUser.value.user_id,
                 p_is_banned: modalBanStatus.value,
                 p_ban_reason: modalBanStatus.value ? modalBanReason.value : null,
                 p_can_view_materials: modalCanViewMaterials.value
               });
-              if (v1Res.error) throw v1Res.error;
+              if (res === true) success = true;
+            } catch (v2Err) {
+              console.warn("admin_set_user_status_v2 error, trying fallback:", v2Err);
+            }
+
+            if (!success) {
+              await rpcCall("admin_set_user_status", {
+                p_admin_user_id: "web_admin",
+                p_target_user_id: selectedUser.value.user_id,
+                p_is_banned: modalBanStatus.value,
+                p_ban_reason: modalBanStatus.value ? modalBanReason.value : null,
+                p_can_view_materials: modalCanViewMaterials.value
+              });
             }
 
             // Update local state

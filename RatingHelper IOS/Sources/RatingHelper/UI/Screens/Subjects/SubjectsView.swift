@@ -135,8 +135,13 @@ public struct SubjectsView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List {
-                        ForEach(groupedSubjects, id: \.0) { group in
+                    ScrollViewReader { proxy in
+                        List {
+                            Color.clear.frame(height: 0).id("subjects_top_anchor")
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+
+                            ForEach(groupedSubjects, id: \.0) { group in
                             Section {
                                 ForEach(group.1) { subject in
                                     if subject.hasJournal {
@@ -171,17 +176,25 @@ public struct SubjectsView: View {
                     .refreshable {
                         await appState.loadSubjects(forceRefresh: true)
                     }
-                }
-            }
-            .navigationTitle("Дисциплины")
-            .searchable(text: $searchText, prompt: "Поиск предмета или преподавателя")
-            .onAppear {
-                if appState.selectedArchiveTab == "archived" {
-                    selectedTab = .archived
-                } else {
-                    selectedTab = .active
+                    .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
+                        if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 0 {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                proxy.scrollTo("subjects_top_anchor", anchor: .top)
+                            }
+                        }
+                    }
                 }
             }
         }
+        .navigationTitle("Дисциплины")
+        .searchable(text: $searchText, prompt: "Поиск предмета или преподавателя")
+        .onAppear {
+            if appState.selectedArchiveTab == "archived" {
+                selectedTab = .archived
+            } else {
+                selectedTab = .active
+            }
+        }
     }
+}
 }

@@ -17,8 +17,15 @@ public struct SettingsView: View {
 
     public var body: some View {
         NavigationStack {
-            Form {
-                // User Session Section
+            ScrollViewReader { proxy in
+                Form {
+                    Section {
+                        Color.clear.frame(height: 0).id("settings_top_anchor")
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                    }
+
+                    // User Session Section
                 Section(header: Text("Учётная запись ЮУрГУ")) {
                     if let session = appState.session {
                         HStack {
@@ -170,6 +177,14 @@ public struct SettingsView: View {
             .sheet(isPresented: $showingAdminView) {
                 AdminView()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
+                if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 4 {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo("settings_top_anchor", anchor: .top)
+                    }
+                }
+            }
+        }
         }
     }
 

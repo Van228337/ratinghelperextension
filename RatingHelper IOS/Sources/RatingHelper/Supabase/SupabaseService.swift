@@ -438,17 +438,33 @@ public actor SupabaseService {
 
     // MARK: - 5. Teacher Reviews & Stats
     public func getTeacherReviews(teacherName: String) async -> ([TeacherReview], TeacherStats?) {
-        guard let encoded = teacherName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews?teacher_name=eq.\(encoded)&order=created_at.desc") else {
-            return ([], nil)
+        let cleanName = teacherName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { return ([], nil) }
+
+        let surname = cleanName.split(separator: " ").first.map(String.init) ?? cleanName
+        let surnameQuery = "\(surname)*"
+
+        // 1. Поиск по фамилии через ilike (находит и полную форму, и сокращение с инициалами)
+        var reviews: [TeacherReview] = []
+        if let encoded = surnameQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews?teacher_name=ilike.\(encoded)&order=created_at.desc") {
+            if let fetched: [TeacherReview] = try? await client.requestJSON(url: reqUrl, headers: defaultHeaders()) {
+                reviews = fetched
+            }
         }
-        do {
-            let reviews: [TeacherReview] = try await client.requestJSON(url: reqUrl, headers: defaultHeaders())
-            let stats = TeacherStats.compute(from: reviews)
-            return (reviews, stats)
-        } catch {
-            return ([], nil)
+
+        // 2. Fallback на точное совпадение
+        if reviews.isEmpty {
+            if let encodedExact = cleanName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews?teacher_name=eq.\(encodedExact)&order=created_at.desc") {
+                if let fetched: [TeacherReview] = try? await client.requestJSON(url: reqUrl, headers: defaultHeaders()) {
+                    reviews = fetched
+                }
+            }
         }
+
+        let stats = TeacherStats.compute(from: reviews)
+        return (reviews, stats)
     }
 
     public func addTeacherReview(review: TeacherReview) async throws -> TeacherReview {
@@ -534,16 +550,28 @@ public actor SupabaseService {
 
     // MARK: - 6. Teacher Summary
     public func getTeacherSummary(teacherName: String) async -> TeacherSummary? {
-        guard let encoded = teacherName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let reqUrl = URL(string: "\(url)/rest/v1/teacher_summaries?teacher_name=eq.\(encoded)&select=*") else {
-            return nil
+        let cleanName = teacherName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { return nil }
+        let surname = cleanName.split(separator: " ").first.map(String.init) ?? cleanName
+
+        // 1. Поиск по фамилии
+        if let encoded = "\(surname)*".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let reqUrl = URL(string: "\(url)/rest/v1/teacher_summaries?teacher_name=ilike.\(encoded)&select=*&order=reviews_count.desc&limit=1") {
+            if let list: [TeacherSummary] = try? await client.requestJSON(url: reqUrl, headers: defaultHeaders()),
+               let first = list.first {
+                return first
+            }
         }
-        do {
-            let items: [TeacherSummary] = try await client.requestJSON(url: reqUrl, headers: defaultHeaders())
-            return items.first
-        } catch {
-            return nil
+
+        // 2. Fallback на точное совпадение
+        if let encoded = cleanName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let reqUrl = URL(string: "\(url)/rest/v1/teacher_summaries?teacher_name=eq.\(encoded)&select=*") {
+            if let list: [TeacherSummary] = try? await client.requestJSON(url: reqUrl, headers: defaultHeaders()),
+               let first = list.first {
+                return first
+            }
         }
+        return nil
     }
 
     public func saveTeacherSummary(teacherName: String, summaryText: String, count: Int) async {

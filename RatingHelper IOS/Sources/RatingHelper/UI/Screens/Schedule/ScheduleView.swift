@@ -5,6 +5,7 @@ public struct ScheduleView: View {
     @State private var lessons: [ScheduleLesson] = []
     @State private var selectedDate: Date = Date()
     @State private var stripReferenceDate: Date = Date()
+    @State private var swipeDirection: Int = 1
     @State private var isLoading: Bool = false
     @State private var isOffline: Bool = false
     @State private var lastSync: String? = nil
@@ -50,12 +51,46 @@ public struct ScheduleView: View {
             .sorted { $0.beginTime < $1.beginTime }
     }
 
+    private var visibleMonthYearTitle: String {
+        guard let first = weekDays.first, let last = weekDays.last else { return "" }
+        let fMonth = calendar.component(.month, from: first)
+        let lMonth = calendar.component(.month, from: last)
+        let fYear = calendar.component(.year, from: first)
+        let lYear = calendar.component(.year, from: last)
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+
+        if fMonth == lMonth && fYear == lYear {
+            formatter.dateFormat = "LLLL yyyy"
+            return formatter.string(from: first).capitalized
+        } else if fYear == lYear {
+            formatter.dateFormat = "LLL"
+            let m1 = formatter.string(from: first).capitalized
+            let m2 = formatter.string(from: last).capitalized
+            return "\(m1) – \(m2) \(fYear)"
+        } else {
+            formatter.dateFormat = "LLL yyyy"
+            let m1 = formatter.string(from: first).capitalized
+            let m2 = formatter.string(from: last).capitalized
+            return "\(m1) – \(m2)"
+        }
+    }
+
+    private var isViewingCurrentWeek: Bool {
+        calendar.isDate(stripReferenceDate, equalTo: Date(), toGranularity: .weekOfYear)
+    }
+
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Заголовок текущего месяца и года ленты
+                monthYearBanner
+                    .background(AppTheme.cardBackground)
+
                 // Горизонтальная лента дней недели со стрелками прокрутки
                 weekDaysHeader
-                    .padding(.vertical, 8)
+                    .padding(.bottom, 8)
                     .background(AppTheme.cardBackground)
 
                 // Офлайн статус
@@ -136,6 +171,44 @@ public struct ScheduleView: View {
     }
 
     // MARK: - Subviews
+    private var monthYearBanner: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(AppTheme.susuBluePrimary)
+                Text(visibleMonthYearTitle)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundColor(.primary)
+            }
+
+            Spacer()
+
+            if !isViewingCurrentWeek {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        stripReferenceDate = Date()
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text("К текущей неделе")
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(AppTheme.susuBluePrimary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(AppTheme.susuBluePrimary.opacity(0.12))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
+    }
+
     private var weekDaysHeader: some View {
         HStack(spacing: 4) {
             // Стрелка влево: смещает видимую ленту дат назад, НЕ меняя выбранный день
@@ -162,7 +235,8 @@ public struct ScheduleView: View {
 
                     Button {
                         // Только отдельное нажатие делает дату выбранной!
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        swipeDirection = date >= selectedDate ? 1 : -1
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                             selectedDate = date
                         }
                     } label: {
@@ -207,53 +281,69 @@ public struct ScheduleView: View {
     }
 
     private var lessonsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                if dayLessons.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "cup.and.saucer.fill")
-                            .font(.system(size: 42))
-                            .foregroundColor(.secondary.opacity(0.6))
-                        Text("В этот день занятий нет")
-                            .font(.headline.weight(.semibold))
-                        Text("Отличный повод повторить пройденный материал или закрыть дедлайны в планировщике!")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 60)
-                } else {
-                    ForEach(dayLessons) { lesson in
-                        lessonCard(lesson)
-                    }
-                }
-            }
-            .padding(16)
-        }
-        .refreshable {
-            await loadSchedule(forceRefresh: true)
-        }
-        // Свайпы в зоне расписания: свайп влево — следующий день, свайп вправо — предыдущий
-        // Приоритет жеста исключает конфликт с вертикальной прокруткой карточек
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded { value in
-                    if abs(value.translation.width) > abs(value.translation.height) * 1.8 && abs(value.translation.width) > 40 {
-                        if value.translation.width < 0 {
-                            switchToNextDay()
-                        } else {
-                            switchToPreviousDay()
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                Color.clear.frame(height: 0).id("schedule_top_anchor")
+
+                VStack(spacing: 12) {
+                    if dayLessons.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "cup.and.saucer.fill")
+                                .font(.system(size: 42))
+                                .foregroundColor(.secondary.opacity(0.6))
+                            Text("В этот день занятий нет")
+                                .font(.headline.weight(.semibold))
+                            Text("Отличный повод повторить пройденный материал или закрыть дедлайны в планировщике!")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                    } else {
+                        ForEach(dayLessons) { lesson in
+                            lessonCard(lesson)
                         }
                     }
                 }
-        )
+                .padding(16)
+                .id(selectedDateString)
+                .transition(.asymmetric(
+                    insertion: .move(edge: swipeDirection > 0 ? .trailing : .leading).combined(with: .opacity),
+                    removal: .move(edge: swipeDirection > 0 ? .leading : .trailing).combined(with: .opacity)
+                ))
+            }
+            .refreshable {
+                await loadSchedule(forceRefresh: true)
+            }
+            // Свайпы в зоне расписания: свайп влево — следующий день, свайп вправо — предыдущий
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 25)
+                    .onEnded { value in
+                        if abs(value.translation.width) > abs(value.translation.height) * 1.3 && abs(value.translation.width) > 30 {
+                            if value.translation.width < 0 {
+                                switchToNextDay()
+                            } else {
+                                switchToPreviousDay()
+                            }
+                        }
+                    }
+            )
+            .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
+                if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 1 {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        scrollProxy.scrollTo("schedule_top_anchor", anchor: .top)
+                    }
+                }
+            }
+        }
     }
 
     private func switchToNextDay() {
         guard let next = calendar.date(byAdding: .day, value: 1, to: selectedDate) else { return }
-        withAnimation(.easeInOut(duration: 0.22)) {
+        swipeDirection = 1
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
             selectedDate = next
             ensureVisibleInStrip(next)
         }
@@ -261,7 +351,8 @@ public struct ScheduleView: View {
 
     private func switchToPreviousDay() {
         guard let prev = calendar.date(byAdding: .day, value: -1, to: selectedDate) else { return }
-        withAnimation(.easeInOut(duration: 0.22)) {
+        swipeDirection = -1
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
             selectedDate = prev
             ensureVisibleInStrip(prev)
         }

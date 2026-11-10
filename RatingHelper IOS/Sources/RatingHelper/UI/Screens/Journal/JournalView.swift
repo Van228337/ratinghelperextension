@@ -259,6 +259,7 @@ public struct JournalView: View {
         }
         .sheet(isPresented: $showingReviewsSheet) {
             TeacherReviewsView(teacherName: subject.instructor, subjectName: subject.disciplineName, subjectId: subject.disciplineId)
+                .environmentObject(appState)
         }
         .sheet(item: $selectedCheckpointForMaterials) { checkpoint in
             MaterialsView(checkpoint: checkpoint, subjectId: subject.disciplineId, teacherName: subject.instructor)

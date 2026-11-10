@@ -251,8 +251,10 @@ public final class AppState: ObservableObject {
                 }
 
                 // 2. Запись общего рейтинга семестра
-                if !ratings.isEmpty {
-                    let overall = ratings.reduce(0, +) / Double(ratings.count)
+                // Учитываем только дисциплины с ненулевым рейтингом, чтобы неоткрытые журналы не роняли средний балл
+                let activeRatings = ratings.filter { $0 > 0 }
+                if !activeRatings.isEmpty {
+                    let overall = activeRatings.reduce(0, +) / Double(activeRatings.count)
                     await supabase.recordOverallRating(userId: uId, term: selectedTerm, rating: overall)
                 }
             }

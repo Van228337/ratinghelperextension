@@ -20,8 +20,10 @@ public struct SemesterDashboardView: View {
 
     public var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Color.clear.frame(height: 0).id("dashboard_top_anchor")
+                    VStack(spacing: 20) {
                     // Summary Card
                     VStack(spacing: 12) {
                         Text("Средний балл за семестр:")
@@ -149,7 +151,15 @@ public struct SemesterDashboardView: View {
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("Сводка семестра")
+            .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
+                if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 3 {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo("dashboard_top_anchor", anchor: .top)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Сводка семестра")
             .task {
                 history = await LocalStore.shared.loadSemesterHistory()
             }

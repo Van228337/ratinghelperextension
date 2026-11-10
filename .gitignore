@@ -8,3 +8,6 @@ google_apps_script_backend.js
 .xtool-tmp/
 RatingHelper.app/
 *.app/
+RatingHelper\ IOS/build/
+**/build/arm64-apple-ios/
+

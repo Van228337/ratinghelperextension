@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct TeacherReviewsView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     public let teacherName: String
     public let subjectName: String
     public let subjectId: String?
@@ -55,6 +56,18 @@ public struct TeacherReviewsView: View {
                 names.insert(n)
             }
         }
+
+        // Подтягиваем все дисциплины из семестра студента, которые ведёт этот же преподаватель
+        let surname = teacherName.split(separator: " ").first.map(String.init)?.lowercased() ?? ""
+        if !surname.isEmpty {
+            for sub in appState.subjects {
+                let inst = sub.instructor.lowercased()
+                if inst.contains(surname) && !sub.disciplineName.isEmpty {
+                    names.insert(sub.disciplineName)
+                }
+            }
+        }
+
         return Array(names).sorted()
     }
 

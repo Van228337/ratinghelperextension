@@ -78,18 +78,6 @@ public struct TasksView: View {
             .navigationTitle("Учебный план")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        showingMoodleSheet = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "graduationcap.fill")
-                            Text("Moodle")
-                                .font(.subheadline.weight(.medium))
-                        }
-                        .foregroundColor(AppTheme.susuBluePrimary)
-                    }
-                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingCreateSheet = true
@@ -141,9 +129,9 @@ public struct TasksView: View {
         .background(AppTheme.cardBackground)
     }
 
+    @ViewBuilder
     private var taskListView: some View {
-        Group {
-            if taskManager.filteredTasks.isEmpty {
+        if taskManager.filteredTasks.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "checklist.checked")
                         .font(.system(size: 52))
@@ -173,8 +161,13 @@ public struct TasksView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    // 1. Просроченные задачи
+                ScrollViewReader { proxy in
+                    List {
+                        Color.clear.frame(height: 0).id("tasks_top_anchor")
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+
+                        // 1. Просроченные задачи
                     if !taskManager.overdueTasks.isEmpty {
                         Section {
                             ForEach(taskManager.overdueTasks) { task in
@@ -239,6 +232,13 @@ public struct TasksView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
+                    if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 2 {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo("tasks_top_anchor", anchor: .top)
+                        }
+                    }
+                }
             }
         }
     }
@@ -259,25 +259,5 @@ public struct TasksView: View {
                 Task { await taskManager.postponeTask(id: task.id, days: days) }
             }
         )
-    }
-}
-
-// Вспомогательный чип фильтра
-struct FilterChip: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(isSelected ? .semibold : .regular))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(isSelected ? AppTheme.susuBluePrimary : Color(uiColor: .tertiarySystemFill))
-                .foregroundColor(isSelected ? .white : .primary)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
     }
 }
