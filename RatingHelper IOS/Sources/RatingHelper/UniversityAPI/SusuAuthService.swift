@@ -114,6 +114,7 @@ public actor SusuAuthService {
     private let client = HTTPClient.shared
     private let store = LocalStore.shared
     private let keychain = KeychainHelper.shared
+    private var activeRefreshTask: Task<UserSession, Error>?
 
     private init() {}
 
@@ -189,11 +190,6 @@ public actor SusuAuthService {
         let profiles = resp.student?.map { $0.toStudentProfile() } ?? []
         let primaryProfile = profiles.first
 
-        let fullName = [resp.lastName, resp.firstName, resp.middleName]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-
         let newSession = UserSession(
             username: resp.userName ?? login,
             identity: identity,
@@ -203,9 +199,6 @@ public actor SusuAuthService {
             rememberMe: rememberMe,
             lastLoginDate: Date(),
             externalUserId: resp.id,
-            fullName: fullName.isEmpty ? nil : fullName,
-            email: resp.email,
-            susuEmail: resp.susuEmail,
             studentProfile: primaryProfile,
             allProfiles: profiles
         )
@@ -231,6 +224,29 @@ public actor SusuAuthService {
     }
 
     public func refreshToken() async throws -> UserSession {
+        // Дедупликация параллельных запросов на обновление:
+        // Если обновление уже запущено, все параллельные вызовы ожидают один и тот же Task,
+        // предотвращая отправку старого refreshToken и инвалидацию токенов.
+        if let ongoing = activeRefreshTask {
+            return try await ongoing.value
+        }
+
+        let task = Task<UserSession, Error> { [weak self] in
+            guard let self = self else {
+                throw NetworkError.unauthorized("Сервис авторизации недоступен")
+            }
+            return try await self.executeRefreshToken()
+        }
+
+        self.activeRefreshTask = task
+        defer {
+            self.activeRefreshTask = nil
+        }
+
+        return try await task.value
+    }
+
+    private func executeRefreshToken() async throws -> UserSession {
         guard var current = session, !current.refreshToken.isEmpty else {
             throw NetworkError.unauthorized("Сессия завершена, необходим повторный вход.")
         }
@@ -254,12 +270,24 @@ public actor SusuAuthService {
             "Accept": "application/json, text/plain, */*"
         ]
 
-        let resp: LoginResponse = try await client.requestJSON(
-            url: url,
-            method: "POST",
-            headers: headers,
-            body: bodyData
-        )
+        let resp: LoginResponse
+        do {
+            resp = try await client.requestJSON(
+                url: url,
+                method: "POST",
+                headers: headers,
+                body: bodyData
+            )
+        } catch let netErr as NetworkError {
+            switch netErr {
+            case .unauthorized:
+                // Сервер ЮУрГУ вернул 401: refreshToken действительно истек или отозван
+                throw NetworkError.unauthorized("Сессия истекла, пожалуйста войдите снова.")
+            default:
+                // Сетевая ошибка или недоступность API: НЕ сбрасываем сессию, а пробрасываем ошибку сети!
+                throw netErr
+            }
+        }
 
         guard resp.isLogged == true, let token = resp.accessToken, !token.isEmpty else {
             throw NetworkError.unauthorized("Сессия истекла, пожалуйста войдите снова.")
@@ -288,11 +316,43 @@ public actor SusuAuthService {
         }
 
         if current.isExpired {
-            let refreshed = try await refreshToken()
-            return refreshed.accessToken
+            do {
+                let refreshed = try await refreshToken()
+                return refreshed.accessToken
+            } catch let error as NetworkError {
+                // Если произошел временный сбой сети при попытке обновить токен,
+                // но локальный accessToken еще не истёк абсолютно (до границы tokenExp), используем его
+                let now = Int64(Date().timeIntervalSince1970)
+                if current.tokenExp > now {
+                    return current.accessToken
+                }
+                throw error
+            }
         }
 
         return current.accessToken
+    }
+
+    /// Единый метод выполнения авторизованного запроса с автоматическим 401-retry
+    public func performAuthorizedRequest<T: Decodable>(
+        url: URL,
+        method: String = "GET",
+        headers: [String: String] = [:],
+        body: Data? = nil
+    ) async throws -> T {
+        var token = try await validToken()
+        var reqHeaders = headers
+        reqHeaders["Authorization"] = "Bearer \(token)"
+
+        do {
+            return try await client.requestJSON(url: url, method: method, headers: reqHeaders, body: body)
+        } catch NetworkError.unauthorized {
+            // При получении 401 от API ЮУрГУ запускаем дедуплицированный refresh и повторяем запрос
+            let refreshed = try await refreshToken()
+            token = refreshed.accessToken
+            reqHeaders["Authorization"] = "Bearer \(token)"
+            return try await client.requestJSON(url: url, method: method, headers: reqHeaders, body: body)
+        }
     }
 
     public func logout() async {

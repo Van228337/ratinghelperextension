@@ -203,8 +203,9 @@ public struct SettingsView: View {
         guard !pin.isEmpty else { return }
 
         Task {
-            let isValid = await SupabaseService.shared.verifyAdminPin(pin: pin)
+            let isValid = await SupabaseService.shared.verifyAdminMasterKey(secret: pin)
             if isValid {
+                UserDefaults.standard.set(pin, forKey: "saved_admin_master_key")
                 if var user = appState.appUser {
                     user.isAdmin = true
                     appState.appUser = user

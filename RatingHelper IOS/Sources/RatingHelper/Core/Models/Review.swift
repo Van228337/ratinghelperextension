@@ -2,6 +2,7 @@ import Foundation
 
 public struct TeacherReview: Identifiable, Codable, Hashable, Sendable {
     public var id: String
+    public var userId: String?
     public var teacherName: String
     public var subjectId: String?
     public var subjectName: String?
@@ -13,9 +14,13 @@ public struct TeacherReview: Identifiable, Codable, Hashable, Sendable {
     public var likes: Int
     public var dislikes: Int
     public var createdAt: String?
+    public var updatedAt: String?
+    public var editCount: Int
+    public var isDeleted: Bool
 
     public init(
         id: String = UUID().uuidString,
+        userId: String? = nil,
         teacherName: String,
         subjectId: String? = nil,
         subjectName: String? = nil,
@@ -26,9 +31,13 @@ public struct TeacherReview: Identifiable, Codable, Hashable, Sendable {
         year: Int = Calendar.current.component(.year, from: Date()),
         likes: Int = 0,
         dislikes: Int = 0,
-        createdAt: String? = nil
+        createdAt: String? = nil,
+        updatedAt: String? = nil,
+        editCount: Int = 0,
+        isDeleted: Bool = false
     ) {
         self.id = id
+        self.userId = userId
         self.teacherName = teacherName
         self.subjectId = subjectId
         self.subjectName = subjectName
@@ -40,10 +49,14 @@ public struct TeacherReview: Identifiable, Codable, Hashable, Sendable {
         self.likes = likes
         self.dislikes = dislikes
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.editCount = editCount
+        self.isDeleted = isDeleted
     }
 
     enum CodingKeys: String, CodingKey {
         case id
+        case userId = "user_id"
         case teacherName = "teacher_name"
         case subjectId = "subject_id"
         case subjectName = "subject_name"
@@ -55,6 +68,29 @@ public struct TeacherReview: Identifiable, Codable, Hashable, Sendable {
         case likes
         case dislikes
         case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case editCount = "edit_count"
+        case isDeleted = "is_deleted"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.userId = try? c.decodeIfPresent(String.self, forKey: .userId)
+        self.teacherName = try c.decode(String.self, forKey: .teacherName)
+        self.subjectId = try? c.decodeIfPresent(String.self, forKey: .subjectId)
+        self.subjectName = try? c.decodeIfPresent(String.self, forKey: .subjectName)
+        self.text = try c.decode(String.self, forKey: .text)
+        self.difficulty = (try? c.decodeIfPresent(Int.self, forKey: .difficulty)) ?? 3
+        self.givesAvtomat = (try? c.decodeIfPresent(Bool.self, forKey: .givesAvtomat)) ?? false
+        self.attendanceStrict = (try? c.decodeIfPresent(Bool.self, forKey: .attendanceStrict)) ?? false
+        self.year = (try? c.decodeIfPresent(Int.self, forKey: .year)) ?? Calendar.current.component(.year, from: Date())
+        self.likes = (try? c.decodeIfPresent(Int.self, forKey: .likes)) ?? 0
+        self.dislikes = (try? c.decodeIfPresent(Int.self, forKey: .dislikes)) ?? 0
+        self.createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+        self.updatedAt = try? c.decodeIfPresent(String.self, forKey: .updatedAt)
+        self.editCount = (try? c.decodeIfPresent(Int.self, forKey: .editCount)) ?? 0
+        self.isDeleted = (try? c.decodeIfPresent(Bool.self, forKey: .isDeleted)) ?? false
     }
 }
 

@@ -16,6 +16,9 @@ public struct TeacherReviewsView: View {
     @State private var isLoading: Bool = true
     @State private var isGeneratingSummary: Bool = false
     @State private var showingAddReviewSheet: Bool = false
+    @State private var reviewToEdit: TeacherReview? = nil
+    @State private var reviewToDelete: TeacherReview? = nil
+    @State private var showingDeleteAlert: Bool = false
 
     public init(
         teacherName: String,
@@ -117,10 +120,16 @@ public struct TeacherReviewsView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
+                        if let myReview = reviews.first(where: { $0.userId == appState.effectiveUserId }) {
+                            reviewToEdit = myReview
+                        } else {
+                            reviewToEdit = nil
+                        }
                         showingAddReviewSheet = true
                     } label: {
                         Label("Написать", systemImage: "square.and.pencil")
                     }
+                    .disabled(!appState.canPublishReviews)
                 }
             }
             .task {
@@ -130,10 +139,19 @@ public struct TeacherReviewsView: View {
                 AddReviewSheet(
                     teacherName: teacherName,
                     subjectName: selectedDisciplineFilter ?? subjectName,
-                    subjectId: subjectId
+                    subjectId: subjectId,
+                    reviewToEdit: reviewToEdit
                 ) {
                     Task { await loadReviews() }
                 }
+            }
+            .alert("Удалить отзыв?", isPresented: $showingDeleteAlert, presenting: reviewToDelete) { rev in
+                Button("Удалить", role: .destructive) {
+                    Task { await deleteReviewAction(rev) }
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: { _ in
+                Text("Это действие безвозвратно удалит ваш отзыв.")
             }
         }
     }
@@ -308,6 +326,33 @@ public struct TeacherReviewsView: View {
                 .background(AppTheme.cardBackground)
                 .cornerRadius(12)
                 .padding(.horizontal)
+            } else if !reviews.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("AI-выжимка отзывов", systemImage: "sparkles")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.purple)
+                        Spacer()
+                        Button {
+                            Task { await generateSummaryManually() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                Text("Сформировать")
+                            }
+                            .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                    }
+                    Text("Краткая сводка на основе \(reviews.count) отзывов с помощью нейросети Groq.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color.purple.opacity(0.06))
+                .cornerRadius(14)
+                .padding(.horizontal)
             }
         }
     }
@@ -355,14 +400,47 @@ public struct TeacherReviewsView: View {
 
     private func reviewCard(_ r: TeacherReview) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let subj = r.subjectName, !subj.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "book.closed.fill")
+            HStack(alignment: .center) {
+                if let subj = r.subjectName, !subj.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "book.closed.fill")
+                            .font(.caption2)
+                            .foregroundColor(AppTheme.susuBluePrimary)
+                        Text(subj)
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+
+                if r.editCount > 0 {
+                    Text("ред.")
                         .font(.caption2)
-                        .foregroundColor(AppTheme.susuBluePrimary)
-                    Text(subj)
-                        .font(.caption2.weight(.medium))
                         .foregroundColor(.secondary)
+                }
+
+                if r.userId == appState.effectiveUserId || appState.appUser?.isAdmin == true {
+                    Menu {
+                        if r.userId == appState.effectiveUserId {
+                            Button {
+                                reviewToEdit = r
+                                showingAddReviewSheet = true
+                            } label: {
+                                Label("Редактировать", systemImage: "pencil")
+                            }
+                        }
+                        Button(role: .destructive) {
+                            reviewToDelete = r
+                            showingDeleteAlert = true
+                        } label: {
+                            Label("Удалить", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 6)
+                    }
                 }
             }
 
@@ -452,15 +530,29 @@ public struct TeacherReviewsView: View {
         self.summary = await SupabaseService.shared.getTeacherSummary(teacherName: teacherName)
         self.userVotes = await LocalStore.shared.loadReviewVotes()
         isLoading = false
+        // Защита бесплатного лимита Groq: автоматическая генерация сводки при пассивном открытии убрана
+    }
 
-        // 3. Auto generate summary if reviews exist but no summary yet
-        if summary == nil && !revs.isEmpty {
-            isGeneratingSummary = true
-            if let newSum = await GroqModerationService.shared.generateTeacherSummary(teacherName: teacherName, reviews: revs) {
-                await SupabaseService.shared.saveTeacherSummary(teacherName: teacherName, summaryText: newSum, count: revs.count)
-                self.summary = TeacherSummary(teacherName: teacherName, summaryText: newSum, reviewsCount: revs.count)
-            }
-            isGeneratingSummary = false
+    private func generateSummaryManually() async {
+        guard !reviews.isEmpty else { return }
+        isGeneratingSummary = true
+        if let newSum = await GroqModerationService.shared.generateTeacherSummary(teacherName: teacherName, reviews: reviews) {
+            await SupabaseService.shared.saveTeacherSummary(teacherName: teacherName, summaryText: newSum, count: reviews.count)
+            self.summary = TeacherSummary(teacherName: teacherName, summaryText: newSum, reviewsCount: reviews.count)
+        }
+        isGeneratingSummary = false
+    }
+
+    private func deleteReviewAction(_ r: TeacherReview) async {
+        do {
+            try await SupabaseService.shared.deleteReview(
+                id: r.id,
+                userId: appState.effectiveUserId,
+                isAdmin: appState.appUser?.isAdmin == true
+            )
+            reviews.removeAll { $0.id == r.id }
+        } catch {
+            print("Failed to delete review: \(error)")
         }
     }
 

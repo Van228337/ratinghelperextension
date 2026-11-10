@@ -55,16 +55,13 @@ public struct UserSession: Codable, Hashable, Sendable {
     public var rememberMe: Bool
     public var lastLoginDate: Date
     public var externalUserId: String?
-    public var fullName: String?
-    public var email: String?
-    public var susuEmail: String?
     public var studentProfile: StudentProfile?
     public var allProfiles: [StudentProfile]
 
     public var isExpired: Bool {
         guard tokenExp > 0 else { return true }
         let now = Int64(Date().timeIntervalSince1970)
-        return now >= (tokenExp - 60)
+        return now >= (tokenExp - 120) // 120s buffer for proactive refresh
     }
 
     public init(
@@ -76,9 +73,6 @@ public struct UserSession: Codable, Hashable, Sendable {
         rememberMe: Bool = false,
         lastLoginDate: Date = Date(),
         externalUserId: String? = nil,
-        fullName: String? = nil,
-        email: String? = nil,
-        susuEmail: String? = nil,
         studentProfile: StudentProfile? = nil,
         allProfiles: [StudentProfile] = []
     ) {
@@ -90,9 +84,6 @@ public struct UserSession: Codable, Hashable, Sendable {
         self.rememberMe = rememberMe
         self.lastLoginDate = lastLoginDate
         self.externalUserId = externalUserId
-        self.fullName = fullName
-        self.email = email
-        self.susuEmail = susuEmail
         self.studentProfile = studentProfile
         self.allProfiles = allProfiles
     }

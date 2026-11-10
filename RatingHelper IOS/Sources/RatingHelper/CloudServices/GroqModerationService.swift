@@ -5,12 +5,16 @@ public struct ServerModerationResponse: Codable, Sendable {
     public let allowed: Bool?
     public let reason: String?
     public let status: String?
+    public let tokensUsed: Int?
+    public let textHash: String?
+    public let cached: Bool?
     public let error: String?
 }
 
 public struct ServerSummaryResponse: Codable, Sendable {
     public let success: Bool?
     public let summary: String?
+    public let tokensUsed: Int?
     public let error: String?
 }
 
@@ -20,6 +24,7 @@ public actor GroqModerationService {
     private let supabase = SupabaseService.shared
     private let client = HTTPClient.shared
     private var cachedScriptUrl: String?
+    private var inFlightTasks: [String: Task<ModerationCheckResult, Never>] = [:]
 
     private init() {}
 
@@ -28,9 +33,6 @@ public actor GroqModerationService {
             return cached
         }
 
-        // Keep the existing configuration key for compatibility, but do not
-        // make moderation depend on a successful config read. The endpoint is
-        // public; only the Groq key remains server-side in Apps Script.
         let dedicated = await supabase.getConfig(key: "groq_gateway_url")
         let configured: String?
         if let dedicated, !dedicated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -48,14 +50,37 @@ public actor GroqModerationService {
         return cachedScriptUrl
     }
 
-    public func moderateReview(text: String) async -> ModerationCheckResult {
+    public func moderateReview(text: String, userId: String? = nil) async -> ModerationCheckResult {
         // Уровень 1: Локальный пре-фильтр (структура, символы, базовые корни)
         let localCheck = TextPreFilter.preFilter(text)
         guard localCheck.allowed else {
             return localCheck
         }
 
-        // Уровень 2 и 3: Серверный шлюз (нормализация NFKC + омоглифы + Groq AI)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hashKey = trimmed.lowercased()
+
+        // Защита от параллельных одинаковых вызовов (дедупликация)
+        if let existingTask = inFlightTasks[hashKey] {
+            return await existingTask.value
+        }
+
+        let task = Task<ModerationCheckResult, Never> { [weak self] in
+            guard let self = self else {
+                return ModerationCheckResult(allowed: false, reason: "Сервис модерации временно недоступен")
+            }
+            return await self.executeModeration(text: trimmed, userId: userId)
+        }
+
+        inFlightTasks[hashKey] = task
+        defer {
+            inFlightTasks.removeValue(forKey: hashKey)
+        }
+
+        return await task.value
+    }
+
+    private func executeModeration(text: String, userId: String?) async -> ModerationCheckResult {
         guard let gatewayUrlStr = await getGatewayUrl(), let url = URL(string: gatewayUrlStr) else {
             return ModerationCheckResult(
                 allowed: false,
@@ -65,7 +90,7 @@ public actor GroqModerationService {
 
         let payload: [String: Any] = [
             "action": "moderateReview",
-            "text": text.trimmingCharacters(in: .whitespacesAndNewlines)
+            "text": text
         ]
 
         guard let bodyData = try? JSONSerialization.data(withJSONObject: payload) else {
@@ -84,6 +109,11 @@ public actor GroqModerationService {
                 timeoutInterval: 75
             )
 
+            let tokens = resp.tokensUsed ?? 0
+            if let uId = userId, !uId.isEmpty, tokens > 0 {
+                await supabase.recordGroqUsage(userId: uId, tokensUsed: tokens, isRejected: resp.allowed == false)
+            }
+
             if resp.success == false {
                 let errText = resp.error ?? resp.reason ?? "Сервис AI-модерации временно недоступен"
                 return ModerationCheckResult(allowed: false, reason: errText)
@@ -99,7 +129,6 @@ public actor GroqModerationService {
             )
         } catch {
             print("Groq moderation error: \(error)")
-            // КРИТИЧЕСКИЙ ФИКС: НЕ пропускать отзыв, если обязательная серверная AI-модерация завершилась сбоем!
             return ModerationCheckResult(
                 allowed: false,
                 reason: "Не удалось выполнить проверку нейросетью: \(error.localizedDescription). Публикация без проверки запрещена."
@@ -107,7 +136,7 @@ public actor GroqModerationService {
         }
     }
 
-    public func generateTeacherSummary(teacherName: String, reviews: [TeacherReview]) async -> String? {
+    public func generateTeacherSummary(teacherName: String, reviews: [TeacherReview], userId: String? = nil) async -> String? {
         guard !reviews.isEmpty else { return nil }
         guard let gatewayUrlStr = await getGatewayUrl(), let url = URL(string: gatewayUrlStr) else {
             return nil
@@ -137,6 +166,11 @@ public actor GroqModerationService {
                 headers: ["Content-Type": "text/plain"],
                 body: bodyData
             )
+
+            if let uId = userId, !uId.isEmpty, let tokens = resp.tokensUsed, tokens > 0 {
+                await supabase.recordGroqUsage(userId: uId, tokensUsed: tokens, isRejected: false)
+            }
+
             if resp.success == true, let summary = resp.summary, !summary.isEmpty {
                 return summary.trimmingCharacters(in: .whitespacesAndNewlines)
             }

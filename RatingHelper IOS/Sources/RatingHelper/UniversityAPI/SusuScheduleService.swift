@@ -45,20 +45,18 @@ public actor SusuScheduleService {
             return cached
         }
 
-        let token = try await auth.validToken()
         let urlString = APIEndpoints.groupSchedule(groupId: cleanGroupId)
         guard let url = URL(string: urlString) else {
             throw NetworkError.invalidURL(urlString)
         }
 
         let headers = [
-            "Authorization": "Bearer \(token)",
             "Accept": "application/json, text/plain, */*",
             "Origin": APIEndpoints.susuBase
         ]
 
         do {
-            let lessons: [ScheduleLesson] = try await client.requestJSON(url: url, headers: headers)
+            let lessons: [ScheduleLesson] = try await auth.performAuthorizedRequest(url: url, headers: headers)
             lastFetchTimes[cleanGroupId] = Date()
             await store.saveSchedule(groupId: cleanGroupId, lessons: lessons)
             return lessons

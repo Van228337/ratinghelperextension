@@ -4,7 +4,18 @@ import CryptoKit
 public struct GoogleDriveUploadResponse: Codable, Sendable {
     public let success: Bool
     public let downloadUrl: String?
+    public let fileId: String?
+    public let fileSizeBytes: Int64?
+    public let fileSha256: String?
     public let error: String?
+}
+
+public struct GoogleDriveUploadResult: Sendable {
+    public let fileId: String?
+    public let downloadUrl: String
+    public let fileSizeBytes: Int64
+    public let fileSha256: String
+    public var fileUrl: String { downloadUrl }
 }
 
 public actor GoogleDriveService {
@@ -32,10 +43,26 @@ public actor GoogleDriveService {
         subjectId: String,
         checkpointId: String
     ) async throws -> String {
+        let res = try await uploadFile(data: data, fileName: fileName, mimeType: mimeType, subjectId: subjectId, checkpointId: checkpointId)
+        return res.downloadUrl
+    }
+
+    public func uploadFile(
+        data: Data,
+        fileName: String,
+        mimeType: String,
+        subjectId: String,
+        checkpointId: String
+    ) async throws -> GoogleDriveUploadResult {
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let cacheKey = "drive_upload_\(subjectId)_\(checkpointId)_\(digest)"
         if let cached = UserDefaults.standard.string(forKey: cacheKey), !cached.isEmpty {
-            return cached
+            return GoogleDriveUploadResult(
+                fileId: nil,
+                downloadUrl: cached,
+                fileSizeBytes: Int64(data.count),
+                fileSha256: digest
+            )
         }
         let gasUrlStr = await getScriptUrl()
 
@@ -43,6 +70,7 @@ public actor GoogleDriveService {
         if let gasUrlStr = gasUrlStr, let gasUrl = URL(string: gasUrlStr) {
             let base64 = data.base64EncodedString()
             let payload: [String: Any] = [
+                "action": "uploadMaterial",
                 "fileName": fileName,
                 "fileData": base64,
                 "mimeType": mimeType
@@ -54,11 +82,17 @@ public actor GoogleDriveService {
                         url: gasUrl,
                         method: "POST",
                         headers: ["Content-Type": "text/plain"],
-                        body: bodyData
+                        body: bodyData,
+                        timeoutInterval: 90
                     )
                     if resp.success, let dl = resp.downloadUrl, !dl.isEmpty {
                         UserDefaults.standard.set(dl, forKey: cacheKey)
-                        return dl
+                        return GoogleDriveUploadResult(
+                            fileId: resp.fileId,
+                            downloadUrl: dl,
+                            fileSizeBytes: resp.fileSizeBytes ?? Int64(data.count),
+                            fileSha256: resp.fileSha256 ?? digest
+                        )
                     }
                 } catch {
                     print("Google Drive upload failed, falling back to Supabase Storage: \(error)")
@@ -68,8 +102,6 @@ public actor GoogleDriveService {
 
         // 2. Fallback: Supabase Storage
         let sanitized = fileName.replacingOccurrences(of: "[^a-zA-Z0-9._-]", with: "_", options: .regularExpression)
-        // Both directories are UUIDs after metadata sync. Keep the fallback
-        // path URL-safe so non-ASCII journal titles never reach Storage.
         let storagePath = "\(subjectId)/\(checkpointId)/\(Int64(Date().timeIntervalSince1970))_\(sanitized)"
         let storageUrlStr = "\(APIEndpoints.supabaseURL)/storage/v1/object/materials/\(storagePath)"
 
@@ -96,6 +128,25 @@ public actor GoogleDriveService {
 
         let publicURL = "\(APIEndpoints.supabaseURL)/storage/v1/object/public/materials/\(storagePath)"
         UserDefaults.standard.set(publicURL, forKey: cacheKey)
-        return publicURL
+        return GoogleDriveUploadResult(
+            fileId: nil,
+            downloadUrl: publicURL,
+            fileSizeBytes: Int64(data.count),
+            fileSha256: digest
+        )
+    }
+
+    /// Удаление файла с Google Диска при сбое сохранения в БД (защита от сиротских файлов)
+    public func deleteFile(fileId: String) async {
+        guard !fileId.isEmpty, let gasUrlStr = await getScriptUrl(), let gasUrl = URL(string: gasUrlStr) else {
+            return
+        }
+        let payload: [String: Any] = [
+            "action": "deleteFile",
+            "fileId": fileId
+        ]
+        if let bodyData = try? JSONSerialization.data(withJSONObject: payload) {
+            _ = try? await client.request(url: gasUrl, method: "POST", headers: ["Content-Type": "text/plain"], body: bodyData)
+        }
     }
 }

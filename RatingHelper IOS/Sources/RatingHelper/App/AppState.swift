@@ -34,8 +34,20 @@ public final class AppState: ObservableObject {
         return session?.externalUserId ?? session?.username ?? ""
     }
 
-    public var isBanned: Bool {
-        appUser?.isBanned == true
+    public var canUploadFiles: Bool {
+        appUser?.canUploadFiles ?? true
+    }
+
+    public var canViewMaterials: Bool {
+        appUser?.canViewMaterials ?? true
+    }
+
+    public var canPublishReviews: Bool {
+        appUser?.canPublishReviews ?? true
+    }
+
+    public var reviewEditCooldownSeconds: Int {
+        appUser?.reviewEditCooldownSeconds ?? 60
     }
 
     public init() {
@@ -81,21 +93,13 @@ public final class AppState: ObservableObject {
         let extUserId = s.externalUserId ?? s.username
         let profile = s.studentProfile
 
+        // Минимизация ПД: передаем исключительно технические ID и группу ЮУрГУ
         let resolved = await supabase.resolveOrRegisterUser(
             externalUserId: extUserId,
             externalIdentity: s.identity,
             username: s.username,
-            fullName: s.fullName,
-            email: s.email,
-            susuEmail: s.susuEmail,
             groupId: profile?.groupId,
             groupName: profile?.groupName,
-            specialityCode: profile?.specialityCode,
-            specialityName: profile?.specialityName,
-            unitName: profile?.unitName,
-            educationLevel: profile?.educationLevel,
-            educationForm: profile?.educationForm,
-            studyYears: profile?.studyYears,
             appVersion: "2.1.0",
             deviceInfo: "iPhone / iOS Native"
         )
@@ -133,11 +137,6 @@ public final class AppState: ObservableObject {
     }
 
     public func loadSubjects(forceRefresh: Bool = false) async {
-        if appUser?.isBanned == true {
-            errorMessage = "Ваша учётная запись заблокирована: \(appUser?.banReason ?? "нарушение правил")."
-            return
-        }
-
         isLoading = true
         errorMessage = nil
         do {
@@ -219,11 +218,6 @@ public final class AppState: ObservableObject {
     }
 
     public func loadJournal(for subject: Subject) async {
-        if appUser?.isBanned == true {
-            errorMessage = "Ваша учётная запись заблокирована: \(appUser?.banReason ?? "обратитесь к администратору")."
-            return
-        }
-
         self.activeSubject = subject
         self.currentJournal = nil
         isLoading = true

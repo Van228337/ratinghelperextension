@@ -21,108 +21,196 @@ public struct SupabaseAppUser: Codable, Sendable, Identifiable {
     public let userId: String
     public var externalUserId: String?
     public var username: String?
-    public var fullName: String?
-    public var email: String?
-    public var susuEmail: String?
     public var groupName: String?
-    public var specialityName: String?
-    public var unitName: String?
-    public var educationLevel: String?
-    public var educationForm: String?
-    public var studyYears: String?
+    public var groupId: String?
     public var deviceInfo: String?
-    public var isBanned: Bool
-    public var banReason: String?
+    public var canUploadFiles: Bool
     public var canViewMaterials: Bool
+    public var canPublishReviews: Bool
+    public var reviewEditCooldownSeconds: Int
+    public var sanctionReason: String?
+    public var sanctionExpiresAt: String?
     public var isAdmin: Bool
+    public var createdAt: String?
     public var lastActive: String?
     public var appVersion: String?
+    public var uploadCount: Int
+    public var uploadedBytes: Int64
+    public var materialsViewsCount: Int
+    public var reviewsCount: Int
+    public var reviewsEditCount: Int
+    public var groqModerationCalls: Int
+    public var groqTokensUsed: Int
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case externalUserId = "external_user_id"
         case username
-        case fullName = "full_name"
-        case email
-        case susuEmail = "susu_email"
         case groupName = "group_name"
-        case specialityName = "speciality_name"
-        case unitName = "unit_name"
-        case educationLevel = "education_level"
-        case educationForm = "education_form"
-        case studyYears = "study_years"
+        case groupId = "group_id"
         case deviceInfo = "device_info"
-        case isBanned = "is_banned"
-        case banReason = "ban_reason"
+        case canUploadFiles = "can_upload_files"
         case canViewMaterials = "can_view_materials"
+        case canPublishReviews = "can_publish_reviews"
+        case reviewEditCooldownSeconds = "review_edit_cooldown_seconds"
+        case sanctionReason = "sanction_reason"
+        case sanctionExpiresAt = "sanction_expires_at"
         case isAdmin = "is_admin"
+        case createdAt = "created_at"
         case lastActive = "last_active"
         case appVersion = "app_version"
+        case uploadCount = "upload_count"
+        case uploadedBytes = "uploaded_bytes"
+        case materialsViewsCount = "materials_views_count"
+        case reviewsCount = "reviews_count"
+        case reviewsEditCount = "reviews_edit_count"
+        case groqModerationCalls = "groq_moderation_calls"
+        case groqTokensUsed = "groq_tokens_used"
     }
 
     public init(
         userId: String,
         externalUserId: String? = nil,
         username: String? = nil,
-        fullName: String? = nil,
-        email: String? = nil,
-        susuEmail: String? = nil,
         groupName: String? = nil,
-        specialityName: String? = nil,
-        unitName: String? = nil,
-        educationLevel: String? = nil,
-        educationForm: String? = nil,
-        studyYears: String? = nil,
+        groupId: String? = nil,
         deviceInfo: String? = nil,
-        isBanned: Bool = false,
-        banReason: String? = nil,
+        canUploadFiles: Bool = true,
         canViewMaterials: Bool = true,
+        canPublishReviews: Bool = true,
+        reviewEditCooldownSeconds: Int = 60,
+        sanctionReason: String? = nil,
+        sanctionExpiresAt: String? = nil,
         isAdmin: Bool = false,
+        createdAt: String? = nil,
         lastActive: String? = nil,
-        appVersion: String? = nil
+        appVersion: String? = nil,
+        uploadCount: Int = 0,
+        uploadedBytes: Int64 = 0,
+        materialsViewsCount: Int = 0,
+        reviewsCount: Int = 0,
+        reviewsEditCount: Int = 0,
+        groqModerationCalls: Int = 0,
+        groqTokensUsed: Int = 0
     ) {
         self.userId = userId
         self.externalUserId = externalUserId
         self.username = username
-        self.fullName = fullName
-        self.email = email
-        self.susuEmail = susuEmail
         self.groupName = groupName
-        self.specialityName = specialityName
-        self.unitName = unitName
-        self.educationLevel = educationLevel
-        self.educationForm = educationForm
-        self.studyYears = studyYears
+        self.groupId = groupId
         self.deviceInfo = deviceInfo
-        self.isBanned = isBanned
-        self.banReason = banReason
+        self.canUploadFiles = canUploadFiles
         self.canViewMaterials = canViewMaterials
+        self.canPublishReviews = canPublishReviews
+        self.reviewEditCooldownSeconds = reviewEditCooldownSeconds
+        self.sanctionReason = sanctionReason
+        self.sanctionExpiresAt = sanctionExpiresAt
         self.isAdmin = isAdmin
+        self.createdAt = createdAt
         self.lastActive = lastActive
         self.appVersion = appVersion
+        self.uploadCount = uploadCount
+        self.uploadedBytes = uploadedBytes
+        self.materialsViewsCount = materialsViewsCount
+        self.reviewsCount = reviewsCount
+        self.reviewsEditCount = reviewsEditCount
+        self.groqModerationCalls = groqModerationCalls
+        self.groqTokensUsed = groqTokensUsed
     }
 
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.userId = try container.decode(String.self, forKey: .userId)
-        self.externalUserId = try container.decodeIfPresent(String.self, forKey: .externalUserId)
-        self.username = try container.decodeIfPresent(String.self, forKey: .username)
-        self.fullName = try container.decodeIfPresent(String.self, forKey: .fullName)
-        self.email = try container.decodeIfPresent(String.self, forKey: .email)
-        self.susuEmail = try container.decodeIfPresent(String.self, forKey: .susuEmail)
-        self.groupName = try container.decodeIfPresent(String.self, forKey: .groupName)
-        self.specialityName = try container.decodeIfPresent(String.self, forKey: .specialityName)
-        self.unitName = try container.decodeIfPresent(String.self, forKey: .unitName)
-        self.educationLevel = try container.decodeIfPresent(String.self, forKey: .educationLevel)
-        self.educationForm = try container.decodeIfPresent(String.self, forKey: .educationForm)
-        self.studyYears = try container.decodeIfPresent(String.self, forKey: .studyYears)
-        self.deviceInfo = try container.decodeIfPresent(String.self, forKey: .deviceInfo)
-        self.isBanned = (try? container.decodeIfPresent(Bool.self, forKey: .isBanned)) ?? false
-        self.banReason = try container.decodeIfPresent(String.self, forKey: .banReason)
-        self.canViewMaterials = (try? container.decodeIfPresent(Bool.self, forKey: .canViewMaterials)) ?? true
-        self.isAdmin = (try? container.decodeIfPresent(Bool.self, forKey: .isAdmin)) ?? false
-        self.lastActive = try container.decodeIfPresent(String.self, forKey: .lastActive)
-        self.appVersion = try container.decodeIfPresent(String.self, forKey: .appVersion)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.userId = try c.decode(String.self, forKey: .userId)
+        self.externalUserId = try? c.decodeIfPresent(String.self, forKey: .externalUserId)
+        self.username = try? c.decodeIfPresent(String.self, forKey: .username)
+        self.groupName = try? c.decodeIfPresent(String.self, forKey: .groupName)
+        self.groupId = try? c.decodeIfPresent(String.self, forKey: .groupId)
+        self.deviceInfo = try? c.decodeIfPresent(String.self, forKey: .deviceInfo)
+        self.canUploadFiles = (try? c.decodeIfPresent(Bool.self, forKey: .canUploadFiles)) ?? true
+        self.canViewMaterials = (try? c.decodeIfPresent(Bool.self, forKey: .canViewMaterials)) ?? true
+        self.canPublishReviews = (try? c.decodeIfPresent(Bool.self, forKey: .canPublishReviews)) ?? true
+        self.reviewEditCooldownSeconds = (try? c.decodeIfPresent(Int.self, forKey: .reviewEditCooldownSeconds)) ?? 60
+        self.sanctionReason = try? c.decodeIfPresent(String.self, forKey: .sanctionReason)
+        self.sanctionExpiresAt = try? c.decodeIfPresent(String.self, forKey: .sanctionExpiresAt)
+        self.isAdmin = (try? c.decodeIfPresent(Bool.self, forKey: .isAdmin)) ?? false
+        self.createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+        self.lastActive = try? c.decodeIfPresent(String.self, forKey: .lastActive)
+        self.appVersion = try? c.decodeIfPresent(String.self, forKey: .appVersion)
+        self.uploadCount = (try? c.decodeIfPresent(Int.self, forKey: .uploadCount)) ?? 0
+        self.uploadedBytes = (try? c.decodeIfPresent(Int64.self, forKey: .uploadedBytes)) ?? 0
+        self.materialsViewsCount = (try? c.decodeIfPresent(Int.self, forKey: .materialsViewsCount)) ?? 0
+        self.reviewsCount = (try? c.decodeIfPresent(Int.self, forKey: .reviewsCount)) ?? 0
+        self.reviewsEditCount = (try? c.decodeIfPresent(Int.self, forKey: .reviewsEditCount)) ?? 0
+        self.groqModerationCalls = (try? c.decodeIfPresent(Int.self, forKey: .groqModerationCalls)) ?? 0
+        self.groqTokensUsed = (try? c.decodeIfPresent(Int.self, forKey: .groqTokensUsed)) ?? 0
+    }
+}
+
+public struct AdminAuditLogItem: Codable, Sendable, Identifiable {
+    public let id: String
+    public let adminUserId: String
+    public let targetUserId: String?
+    public let action: String
+    public let reason: String?
+    public let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case adminUserId = "admin_user_id"
+        case targetUserId = "target_user_id"
+        case action
+        case reason
+        case createdAt = "created_at"
+    }
+
+    public init(
+        id: String = UUID().uuidString,
+        adminUserId: String,
+        targetUserId: String? = nil,
+        action: String,
+        reason: String? = nil,
+        createdAt: String = ISO8601DateFormatter().string(from: Date())
+    ) {
+        self.id = id
+        self.adminUserId = adminUserId
+        self.targetUserId = targetUserId
+        self.action = action
+        self.reason = reason
+        self.createdAt = createdAt
+    }
+}
+
+public struct AdminInfrastructureStats: Codable, Sendable {
+    public let totalUsers: Int
+    public let activeUsers24h: Int
+    public let totalMaterials: Int
+    public let totalStorageBytes: Int64
+    public let totalReviews: Int
+    public let totalGroqCalls: Int
+    public let totalGroqTokens: Int
+    public let sanctionedUsers: Int
+
+    enum CodingKeys: String, CodingKey {
+        case totalUsers = "total_users"
+        case activeUsers24h = "active_users_24h"
+        case totalMaterials = "total_materials"
+        case totalStorageBytes = "total_storage_bytes"
+        case totalReviews = "total_reviews"
+        case totalGroqCalls = "total_groq_calls"
+        case totalGroqTokens = "total_groq_tokens"
+        case sanctionedUsers = "sanctioned_users"
+    }
+}
+
+public struct AdminDashboardData: Codable, Sendable {
+    public let users: [SupabaseAppUser]
+    public let auditLogs: [AdminAuditLogItem]
+    public let stats: AdminInfrastructureStats
+
+    enum CodingKeys: String, CodingKey {
+        case users
+        case auditLogs = "audit_logs"
+        case stats
     }
 }
 
@@ -358,7 +446,11 @@ public actor SupabaseService {
         title: String,
         fileUrl: String,
         fileName: String,
-        year: Int
+        year: Int,
+        userId: String? = nil,
+        fileSizeBytes: Int64 = 0,
+        fileSha256: String? = nil,
+        driveFileId: String? = nil
     ) async throws -> MaterialItem {
         guard UUID(uuidString: checkpointId) != nil else {
             throw NetworkError.invalidURL("Контрольная точка ещё не синхронизирована с базой данных")
@@ -366,6 +458,53 @@ public actor SupabaseService {
         guard UUID(uuidString: subjectId) != nil else {
             throw NetworkError.invalidURL("Дисциплина имеет некорректный идентификатор")
         }
+
+        // 1. Попытка через защищённый RPC register_uploaded_material
+        if let uId = userId, !uId.isEmpty, let rpcURL = URL(string: "\(url)/rest/v1/rpc/register_uploaded_material") {
+            struct RegisterResp: Decodable {
+                let success: Bool
+                let id: String?
+                let error: String?
+            }
+
+            let payload: [String: Any] = [
+                "p_user_id": uId,
+                "p_checkpoint_id": checkpointId,
+                "p_subject_id": subjectId,
+                "p_teacher_name": teacherName ?? NSNull(),
+                "p_title": title,
+                "p_file_url": fileUrl,
+                "p_file_name": fileName,
+                "p_file_size_bytes": fileSizeBytes,
+                "p_file_sha256": fileSha256 ?? NSNull(),
+                "p_year": year
+            ]
+
+            if let bodyData = try? JSONSerialization.data(withJSONObject: payload) {
+                let resp: RegisterResp = try await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: bodyData)
+                if !resp.success {
+                    throw NetworkError.serverError(403, resp.error ?? "Загрузка файла отклонена сервером")
+                }
+                return MaterialItem(
+                    id: resp.id ?? UUID().uuidString,
+                    checkpointId: checkpointId,
+                    subjectId: subjectId,
+                    teacherName: teacherName,
+                    title: title,
+                    fileUrl: fileUrl,
+                    fileName: fileName,
+                    year: year,
+                    upvotes: 1,
+                    downvotes: 0,
+                    userId: uId,
+                    fileSizeBytes: fileSizeBytes,
+                    fileSha256: fileSha256,
+                    driveFileId: driveFileId
+                )
+            }
+        }
+
+        // 2. Резервный прямой REST запрос
         guard let reqUrl = URL(string: "\(url)/rest/v1/materials") else {
             throw NetworkError.invalidURL("\(url)/rest/v1/materials")
         }
@@ -376,14 +515,15 @@ public actor SupabaseService {
             "file_name": fileName,
             "year": year,
             "upvotes": 1,
-            "downvotes": 0
+            "downvotes": 0,
+            "checkpoint_id": checkpointId,
+            "subject_id": subjectId
         ]
-
-        newMat["checkpoint_id"] = checkpointId
-        newMat["subject_id"] = subjectId
-        if let tn = teacherName, !tn.isEmpty {
-            newMat["teacher_name"] = tn
-        }
+        if let tn = teacherName, !tn.isEmpty { newMat["teacher_name"] = tn }
+        if let u = userId, !u.isEmpty { newMat["user_id"] = u }
+        if fileSizeBytes > 0 { newMat["file_size_bytes"] = fileSizeBytes }
+        if let sha = fileSha256, !sha.isEmpty { newMat["file_sha256"] = sha }
+        if let df = driveFileId, !df.isEmpty { newMat["drive_file_id"] = df }
 
         let bodyData = try JSONSerialization.data(withJSONObject: [newMat])
         let items: [MaterialItem] = try await client.requestJSON(
@@ -467,7 +607,46 @@ public actor SupabaseService {
         return (reviews, stats)
     }
 
-    public func addTeacherReview(review: TeacherReview) async throws -> TeacherReview {
+    public func addTeacherReview(review: TeacherReview, userId: String? = nil) async throws -> TeacherReview {
+        let effectiveUid = userId ?? review.userId ?? ""
+
+        // 1. Защищённый RPC publish_teacher_review (контроль 1 отзыв на предмет, cooldown, can_publish_reviews)
+        if !effectiveUid.isEmpty, let sId = review.subjectId, UUID(uuidString: sId) != nil,
+           let rpcURL = URL(string: "\(url)/rest/v1/rpc/publish_teacher_review") {
+            struct PublishResp: Decodable {
+                let success: Bool
+                let action: String?
+                let id: String?
+                let edit_count: Int?
+                let error: String?
+            }
+
+            let payload: [String: Any] = [
+                "p_user_id": effectiveUid,
+                "p_teacher_name": review.teacherName,
+                "p_subject_id": sId,
+                "p_subject_name": review.subjectName ?? "",
+                "p_text": review.text,
+                "p_difficulty": review.difficulty,
+                "p_gives_avtomat": review.givesAvtomat,
+                "p_attendance_strict": review.attendanceStrict,
+                "p_year": review.year
+            ]
+
+            let bodyData = try JSONSerialization.data(withJSONObject: payload)
+            let resp: PublishResp = try await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: bodyData)
+            if !resp.success {
+                throw NetworkError.serverError(400, resp.error ?? "Не удалось опубликовать отзыв")
+            }
+
+            var resultReview = review
+            resultReview.userId = effectiveUid
+            if let newId = resp.id { resultReview.id = newId }
+            if let ec = resp.edit_count { resultReview.editCount = ec }
+            return resultReview
+        }
+
+        // 2. Fallback REST
         guard let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews") else {
             throw NetworkError.invalidURL("\(url)/rest/v1/teacher_reviews")
         }
@@ -484,7 +663,7 @@ public actor SupabaseService {
             "likes": 0,
             "dislikes": 0
         ]
-
+        if !effectiveUid.isEmpty { dict["user_id"] = effectiveUid }
         if let sId = review.subjectId, !sId.isEmpty, UUID(uuidString: sId) != nil {
             dict["subject_id"] = sId
         }
@@ -493,7 +672,7 @@ public actor SupabaseService {
         let items: [TeacherReview] = try await client.requestJSON(
             url: reqUrl,
             method: "POST",
-            headers: defaultHeaders(prefer: "return=representation,resolution=ignore-duplicates"),
+            headers: defaultHeaders(prefer: "return=representation,resolution=merge-duplicates"),
             body: bodyData
         )
         if let first = items.first {
@@ -608,33 +787,27 @@ public actor SupabaseService {
         }
     }
 
-    // MARK: - 7. User Resolution & Admin RPC
+    // MARK: - 7. User Resolution (Zero Personal Data Collection)
     public func resolveOrRegisterUser(
         externalUserId: String,
         externalIdentity: String? = nil,
         username: String? = nil,
-        fullName: String? = nil,
-        email: String? = nil,
-        susuEmail: String? = nil,
         groupId: String? = nil,
         groupName: String? = nil,
-        specialityCode: String? = nil,
-        specialityName: String? = nil,
-        unitName: String? = nil,
-        educationLevel: String? = nil,
-        educationForm: String? = nil,
-        studyYears: String? = nil,
         appVersion: String? = "2.1.0",
         deviceInfo: String? = "iPhone / iOS Native"
     ) async -> SupabaseAppUser {
         struct ResolveResp: Decodable {
             let user_id: String
-            let is_banned: Bool
-            let ban_reason: String?
-            let can_view_materials: Bool
-            let is_admin: Bool
-            let full_name: String?
+            let can_upload_files: Bool?
+            let can_view_materials: Bool?
+            let can_publish_reviews: Bool?
+            let review_edit_cooldown_seconds: Int?
+            let sanction_reason: String?
+            let sanction_expires_at: String?
+            let is_admin: Bool?
             let group_name: String?
+            let group_id: String?
         }
 
         if let rpcURL = URL(string: "\(url)/rest/v1/rpc/resolve_or_register_user") {
@@ -642,17 +815,8 @@ public actor SupabaseService {
                 "p_external_user_id": externalUserId,
                 "p_external_identity": externalIdentity ?? NSNull(),
                 "p_username": username ?? NSNull(),
-                "p_full_name": fullName ?? NSNull(),
-                "p_email": email ?? NSNull(),
-                "p_susu_email": susuEmail ?? NSNull(),
                 "p_group_id": groupId ?? NSNull(),
                 "p_group_name": groupName ?? NSNull(),
-                "p_speciality_code": specialityCode ?? NSNull(),
-                "p_speciality_name": specialityName ?? NSNull(),
-                "p_unit_name": unitName ?? NSNull(),
-                "p_education_level": educationLevel ?? NSNull(),
-                "p_education_form": educationForm ?? NSNull(),
-                "p_study_years": studyYears ?? NSNull(),
                 "p_app_version": appVersion ?? "2.1.0",
                 "p_device_info": deviceInfo ?? "iPhone / iOS Native"
             ]
@@ -664,20 +828,16 @@ public actor SupabaseService {
                     userId: first.user_id,
                     externalUserId: externalUserId,
                     username: username,
-                    fullName: first.full_name ?? fullName,
-                    email: email,
-                    susuEmail: susuEmail,
                     groupName: first.group_name ?? groupName,
-                    specialityName: specialityName,
-                    unitName: unitName,
-                    educationLevel: educationLevel,
-                    educationForm: educationForm,
-                    studyYears: studyYears,
+                    groupId: first.group_id ?? groupId,
                     deviceInfo: deviceInfo,
-                    isBanned: first.is_banned,
-                    banReason: first.ban_reason,
-                    canViewMaterials: first.can_view_materials,
-                    isAdmin: first.is_admin,
+                    canUploadFiles: first.can_upload_files ?? true,
+                    canViewMaterials: first.can_view_materials ?? true,
+                    canPublishReviews: first.can_publish_reviews ?? true,
+                    reviewEditCooldownSeconds: first.review_edit_cooldown_seconds ?? 60,
+                    sanctionReason: first.sanction_reason,
+                    sanctionExpiresAt: first.sanction_expires_at,
+                    isAdmin: first.is_admin ?? false,
                     lastActive: ISO8601DateFormatter().string(from: Date()),
                     appVersion: appVersion
                 )
@@ -690,7 +850,7 @@ public actor SupabaseService {
 
     public func getUserProfile(userId: String) async -> SupabaseAppUser {
         guard let reqUrl = URL(string: "\(url)/rest/v1/app_users?user_id=eq.\(userId)&select=*") else {
-            return SupabaseAppUser(userId: userId, isBanned: false, canViewMaterials: true, isAdmin: false)
+            return SupabaseAppUser(userId: userId)
         }
         do {
             let users: [SupabaseAppUser] = try await client.requestJSON(url: reqUrl, headers: defaultHeaders())
@@ -705,26 +865,44 @@ public actor SupabaseService {
             let newUser = SupabaseAppUser(
                 userId: userId,
                 deviceInfo: "iOS Native App",
-                isBanned: false,
+                canUploadFiles: true,
                 canViewMaterials: true,
+                canPublishReviews: true,
                 isAdmin: false,
                 lastActive: ISO8601DateFormatter().string(from: Date())
             )
-            if let postUrl = URL(string: "\(url)/rest/v1/app_users?on_conflict=user_id"),
-               let postData = try? JSONSerialization.data(withJSONObject: [[
-                   "user_id": userId,
-                   "device_info": "iOS Native App",
-                   "is_banned": false,
-                   "can_view_materials": true,
-                   "created_at": ISO8601DateFormatter().string(from: Date()),
-                   "last_active": ISO8601DateFormatter().string(from: Date())
-               ]]) {
-                _ = try? await client.request(url: postUrl, method: "POST", headers: defaultHeaders(prefer: "resolution=merge-duplicates"), body: postData)
-            }
             return newUser
         } catch {
-            return SupabaseAppUser(userId: userId, isBanned: false, canViewMaterials: true, isAdmin: false)
+            return SupabaseAppUser(userId: userId)
         }
+    }
+
+    public func recordGroqUsage(userId: String, tokensUsed: Int, isRejected: Bool = false) async {
+        guard !userId.isEmpty, tokensUsed > 0, let reqUrl = URL(string: "\(url)/rest/v1/rpc/record_groq_usage") else {
+            return
+        }
+        let payload: [String: Any] = [
+            "p_user_id": userId,
+            "p_tokens_used": tokensUsed,
+            "p_is_rejected": isRejected
+        ]
+        if let bodyData = try? JSONSerialization.data(withJSONObject: payload) {
+            _ = try? await client.request(url: reqUrl, method: "POST", headers: defaultHeaders(), body: bodyData)
+        }
+    }
+
+    public func verifyAdminMasterKey(secret: String) async -> Bool {
+        guard !secret.isEmpty else { return false }
+        if let reqUrl = URL(string: "\(url)/rest/v1/rpc/verify_admin_credentials") {
+            struct AdminCredResp: Decodable {
+                let success: Bool?
+            }
+            if let bodyData = try? JSONSerialization.data(withJSONObject: ["p_secret": secret]),
+               let res: AdminCredResp = try? await client.requestJSON(url: reqUrl, method: "POST", headers: defaultHeaders(), body: bodyData) {
+                if res.success == true { return true }
+            }
+        }
+        return await verifyAdminPin(pin: secret)
     }
 
     public func verifyAdminPin(pin: String) async -> Bool {
@@ -744,13 +922,26 @@ public actor SupabaseService {
     }
 
     // MARK: - 8. Admin Methods & Security Verification
+    public func getAdminDashboardData(secret: String) async throws -> AdminDashboardData {
+        guard let reqUrl = URL(string: "\(url)/rest/v1/rpc/get_admin_dashboard_data") else {
+            throw NetworkError.invalidURL("Некорректный адрес RPC get_admin_dashboard_data")
+        }
+        let bodyData = try JSONSerialization.data(withJSONObject: ["p_secret": secret])
+        return try await client.requestJSON(
+            url: reqUrl,
+            method: "POST",
+            headers: defaultHeaders(),
+            body: bodyData
+        )
+    }
+
     public func getAllUsers() async -> [SupabaseAppUser] {
         guard let reqUrl = URL(string: "\(url)/rest/v1/app_users?order=last_active.desc") else { return [] }
         return (try? await client.requestJSON(url: reqUrl, headers: defaultHeaders())) ?? []
     }
 
     public func getAllReviews() async -> [TeacherReview] {
-        guard let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews?order=created_at.desc") else { return [] }
+        guard let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews?is_deleted=neq.true&order=created_at.desc") else { return [] }
         return (try? await client.requestJSON(url: reqUrl, headers: defaultHeaders())) ?? []
     }
 
@@ -759,7 +950,22 @@ public actor SupabaseService {
         return (try? await client.requestJSON(url: reqUrl, headers: defaultHeaders())) ?? []
     }
 
-    public func deleteReview(id: String) async throws {
+    public func deleteReview(id: String, userId: String? = nil, isAdmin: Bool = false) async throws {
+        // 1. Попытка через защищённый RPC delete_teacher_review
+        if let rpcURL = URL(string: "\(url)/rest/v1/rpc/delete_teacher_review") {
+            let payload: [String: Any] = [
+                "p_user_id": userId ?? NSNull(),
+                "p_review_id": id,
+                "p_is_admin": isAdmin
+            ]
+            if let body = try? JSONSerialization.data(withJSONObject: payload),
+               let res: Bool = try? await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: body),
+               res == true {
+                return
+            }
+        }
+
+        // 2. Fallback REST
         guard let reqUrl = URL(string: "\(url)/rest/v1/teacher_reviews?id=eq.\(id)") else { return }
         _ = try await client.request(url: reqUrl, method: "DELETE", headers: defaultHeaders(prefer: "return=representation"))
     }
@@ -769,37 +975,46 @@ public actor SupabaseService {
         _ = try await client.request(url: reqUrl, method: "DELETE", headers: defaultHeaders(prefer: "return=representation"))
     }
 
-    public func adminSetUserStatus(
+    public func adminSetUserPermissions(
+        masterSecret: String,
         adminUserId: String,
         targetUserId: String,
-        isBanned: Bool? = nil,
-        banReason: String? = nil,
-        canViewMaterials: Bool? = nil
+        canUploadFiles: Bool? = nil,
+        canViewMaterials: Bool? = nil,
+        canPublishReviews: Bool? = nil,
+        cooldownSeconds: Int? = nil,
+        sanctionReason: String? = nil,
+        sanctionDurationHours: Int? = nil
     ) async throws -> Bool {
-        if let rpcURL = URL(string: "\(url)/rest/v1/rpc/admin_set_user_status") {
+        if let rpcURL = URL(string: "\(url)/rest/v1/rpc/admin_set_user_permissions") {
             var payload: [String: Any] = [
+                "p_master_secret": masterSecret,
                 "p_admin_user_id": adminUserId,
                 "p_target_user_id": targetUserId
             ]
-            if let b = isBanned { payload["p_is_banned"] = b }
-            if let r = banReason { payload["p_ban_reason"] = r }
-            if let m = canViewMaterials { payload["p_can_view_materials"] = m }
+            if let up = canUploadFiles { payload["p_can_upload_files"] = up }
+            if let vm = canViewMaterials { payload["p_can_view_materials"] = vm }
+            if let pr = canPublishReviews { payload["p_can_publish_reviews"] = pr }
+            if let cd = cooldownSeconds { payload["p_cooldown_seconds"] = cd }
+            if let sr = sanctionReason { payload["p_sanction_reason"] = sr }
+            if let dh = sanctionDurationHours { payload["p_sanction_duration_hours"] = dh }
 
-            if let body = try? JSONSerialization.data(withJSONObject: payload),
-               let res: Bool = try? await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: body) {
-                return res
+            struct Resp: Decodable {
+                let success: Bool
             }
+
+            let body = try JSONSerialization.data(withJSONObject: payload)
+            let res: Resp = try await client.requestJSON(url: rpcURL, method: "POST", headers: defaultHeaders(), body: body)
+            return res.success
         }
 
-        // Fallback: direct PATCH if RPC not yet deployed
+        // Fallback direct patch
         var updates: [String: Any] = [:]
-        if let b = isBanned {
-            updates["is_banned"] = b
-            updates["ban_reason"] = b ? (banReason ?? "Заблокирован администратором") : NSNull()
-        }
-        if let m = canViewMaterials {
-            updates["can_view_materials"] = m
-        }
+        if let up = canUploadFiles { updates["can_upload_files"] = up }
+        if let vm = canViewMaterials { updates["can_view_materials"] = vm }
+        if let pr = canPublishReviews { updates["can_publish_reviews"] = pr }
+        if let cd = cooldownSeconds { updates["review_edit_cooldown_seconds"] = cd }
+        if let sr = sanctionReason { updates["sanction_reason"] = sr }
         guard !updates.isEmpty, let patchUrl = URL(string: "\(url)/rest/v1/app_users?user_id=eq.\(targetUserId)") else { return false }
         let body = try JSONSerialization.data(withJSONObject: updates)
         _ = try await client.request(url: patchUrl, method: "PATCH", headers: defaultHeaders(prefer: "return=representation"), body: body)

@@ -10,4 +10,11 @@ RatingHelper.app/
 *.app/
 RatingHelper\ IOS/build/
 **/build/arm64-apple-ios/
+**/xtool/
+
+# Allow distribution build outputs
+!build/distribution/
+!build/distribution/**
+!RatingHelper IOS/build/distribution/
+!RatingHelper IOS/build/distribution/**
 

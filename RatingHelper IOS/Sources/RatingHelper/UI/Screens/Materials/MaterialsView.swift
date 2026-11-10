@@ -119,7 +119,7 @@ public struct MaterialsView: View {
                     } label: {
                         Label("Загрузить", systemImage: "arrow.up.doc.fill")
                     }
-                    .disabled(appState.isBanned || appState.appUser?.canViewMaterials == false)
+                    .disabled(!appState.canUploadFiles)
                 }
             }
             .task {
@@ -143,6 +143,11 @@ public struct MaterialsView: View {
     }
 
     private func loadMaterials() async {
+        guard appState.canViewMaterials else {
+            isLoading = false
+            self.materials = []
+            return
+        }
         isLoading = true
         let list = await SupabaseService.shared.getMaterialsForCheckpoint(
             checkpointId: checkpoint.id,

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 public struct UploadMaterialSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     public let checkpoint: CheckpointItem
     public let subjectId: String
     public let teacherName: String
@@ -25,6 +26,18 @@ public struct UploadMaterialSheet: View {
     public var body: some View {
         NavigationStack {
             Form {
+                if !appState.canUploadFiles {
+                    Section {
+                        HStack(spacing: 8) {
+                            Image(systemName: "hand.raised.fill")
+                                .foregroundColor(.orange)
+                            Text("Загрузка файлов для вашей учётной записи отключена администратором.")
+                                .font(.footnote)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+
                 Section(header: Text("Контрольная точка")) {
                     Text(checkpoint.title)
                         .font(.headline)
@@ -106,7 +119,7 @@ public struct UploadMaterialSheet: View {
                                 .fontWeight(.bold)
                         }
                     }
-                    .disabled((selectedFileData == nil && externalUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || isUploading)
+                    .disabled(!appState.canUploadFiles || (selectedFileData == nil && externalUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || isUploading)
                 }
             }
             .fileImporter(
@@ -156,6 +169,11 @@ public struct UploadMaterialSheet: View {
     }
 
     private func uploadMaterial() {
+        guard appState.canUploadFiles else {
+            isError = true
+            statusMessage = "Загрузка файлов отключена администратором."
+            return
+        }
         guard UUID(uuidString: checkpoint.id) != nil else {
             isError = true
             statusMessage = "Контрольная точка ещё не синхронизирована с Supabase. Обновите журнал и повторите попытку."
@@ -171,17 +189,20 @@ public struct UploadMaterialSheet: View {
         isError = false
 
         Task {
+            var uploadedResult: GoogleDriveUploadResult? = nil
             do {
                 var fileLink = externalUrl.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 if let data = selectedFileData, let fname = selectedFileName {
-                    fileLink = try await GoogleDriveService.shared.upload(
+                    let result = try await GoogleDriveService.shared.uploadFile(
                         data: data,
                         fileName: fname,
                         mimeType: selectedMimeType,
                         subjectId: subjectId,
                         checkpointId: checkpoint.id
                     )
+                    uploadedResult = result
+                    fileLink = result.fileUrl
                 }
 
                 statusMessage = "Сохранение в базу..."
@@ -193,7 +214,11 @@ public struct UploadMaterialSheet: View {
                     title: title.isEmpty ? (selectedFileName ?? "Материал") : title,
                     fileUrl: fileLink,
                     fileName: selectedFileName ?? "Ссылка",
-                    year: year
+                    year: year,
+                    userId: appState.effectiveUserId,
+                    fileSizeBytes: uploadedResult?.fileSizeBytes ?? 0,
+                    fileSha256: uploadedResult?.fileSha256,
+                    driveFileId: uploadedResult?.fileId
                 )
 
                 isUploading = false
@@ -203,6 +228,10 @@ public struct UploadMaterialSheet: View {
                 try? await Task.sleep(nanoseconds: 600_000_000)
                 dismiss()
             } catch {
+                if let driveId = uploadedResult?.fileId, !driveId.isEmpty {
+                    // Удаляем файл-сироту с Google Диска при сбое записи в БД
+                    await GoogleDriveService.shared.deleteFile(fileId: driveId)
+                }
                 isUploading = false
                 isError = true
                 statusMessage = "Ошибка загрузки: \(error.localizedDescription)"

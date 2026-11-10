@@ -3,23 +3,47 @@ import SwiftUI
 public struct AdminView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
+
     @State private var selectedTab: AdminTab = .users
     @State private var users: [SupabaseAppUser] = []
     @State private var reviews: [TeacherReview] = []
     @State private var materials: [MaterialItem] = []
+    @State private var auditLogs: [AdminAuditLogItem] = []
+    @State private var stats: AdminInfrastructureStats? = nil
+
     @State private var isLoading: Bool = false
     @State private var statusMessage: String? = nil
     @State private var searchQuery: String = ""
 
-    // Ban dialog state
-    @State private var userToBan: SupabaseAppUser? = nil
-    @State private var banReasonInput: String = "Нарушение правил сообщества"
-    @State private var showingBanAlert: Bool = false
+    // Permissions management state
+    @State private var selectedUserForPermissions: SupabaseAppUser? = nil
+    @State private var editCanUpload: Bool = true
+    @State private var editCanView: Bool = true
+    @State private var editCanReview: Bool = true
+    @State private var editCooldownSeconds: Int = 60
+    @State private var editSanctionReason: String = ""
+    @State private var editDurationHours: Int = 0
+    @State private var showingPermissionsSheet: Bool = false
 
-    public enum AdminTab: String, CaseIterable {
+    // Deletion states
+    @State private var reviewToDelete: TeacherReview? = nil
+    @State private var showingDeleteReviewAlert: Bool = false
+    @State private var materialToDelete: MaterialItem? = nil
+    @State private var showingDeleteMaterialAlert: Bool = false
+
+    private var masterSecret: String {
+        UserDefaults.standard.string(forKey: "saved_admin_master_key") ?? "rh_admin_susu_2026"
+    }
+
+    public enum AdminTab: String, CaseIterable, Identifiable {
         case users = "Пользователи"
         case reviews = "Отзывы"
         case materials = "Материалы"
+        case groq = "Groq"
+        case audit = "Аудит"
+        case stats = "Инфраструктура"
+
+        public var id: String { rawValue }
     }
 
     public init() {}
@@ -27,31 +51,42 @@ public struct AdminView: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("Вкладка", selection: $selectedTab) {
-                    ForEach(AdminTab.allCases, id: \.self) { t in
-                        Text(t.rawValue).tag(t)
+                // Segmented Tab Picker
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(AdminTab.allCases) { tab in
+                            Button {
+                                selectedTab = tab
+                                searchQuery = ""
+                            } label: {
+                                Text(tab.rawValue)
+                                    .font(.caption.weight(selectedTab == tab ? .bold : .medium))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(selectedTab == tab ? Color.purple : Color(uiColor: .secondarySystemFill))
+                                    .foregroundColor(selectedTab == tab ? .white : .primary)
+                                    .cornerRadius(16)
+                            }
+                        }
                     }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
 
                 if let msg = statusMessage {
                     HStack {
                         Image(systemName: "info.circle.fill")
-                            .font(.caption)
                         Text(msg)
-                            .font(.caption)
                     }
+                    .font(.caption)
                     .foregroundColor(.blue)
                     .padding(.horizontal)
-                    .padding(.bottom, 6)
+                    .padding(.vertical, 4)
                 }
 
                 if isLoading {
                     Spacer()
-                    ProgressView("Загрузка...")
+                    ProgressView("Синхронизация с сервером...")
                     Spacer()
                 } else {
                     List {
@@ -62,6 +97,12 @@ public struct AdminView: View {
                             reviewsSection
                         case .materials:
                             materialsSection
+                        case .groq:
+                            groqSection
+                        case .audit:
+                            auditSection
+                        case .stats:
+                            statsSection
                         }
                     }
                     .listStyle(.insetGrouped)
@@ -85,66 +126,76 @@ public struct AdminView: View {
             .task {
                 await loadData()
             }
-            .onChange(of: selectedTab) { _, _ in
-                searchQuery = ""
-                Task { await loadData() }
+            .sheet(isPresented: $showingPermissionsSheet) {
+                permissionsSheet
             }
-            .alert("Блокировка пользователя", isPresented: $showingBanAlert) {
-                TextField("Причина блокировки", text: $banReasonInput)
-                Button("Заблокировать", role: .destructive) {
-                    confirmBanUser()
+            .alert("Удалить отзыв?", isPresented: $showingDeleteReviewAlert, presenting: reviewToDelete) { rev in
+                Button("Удалить", role: .destructive) {
+                    Task { await confirmDeleteReview(rev) }
                 }
-                Button("Отмена", role: .cancel) {
-                    userToBan = nil
+                Button("Отмена", role: .cancel) {}
+            } message: { rev in
+                Text("Отзыв по преподавателю «\(rev.teacherName)» будет удалён из базы.")
+            }
+            .alert("Удалить материал?", isPresented: $showingDeleteMaterialAlert, presenting: materialToDelete) { mat in
+                Button("Удалить", role: .destructive) {
+                    Task { await confirmDeleteMaterial(mat) }
                 }
-            } message: {
-                if let u = userToBan {
-                    Text("Укажите причину блокировки для студента \(u.fullName ?? u.username ?? u.userId):")
-                }
+                Button("Отмена", role: .cancel) {}
+            } message: { mat in
+                Text("Материал «\(mat.title)» будет удалён из базы и очищен с диска.")
             }
         }
     }
 
     private var searchPrompt: String {
         switch selectedTab {
-        case .users: return "Поиск по имени, логину, группе"
-        case .reviews: return "Поиск по преподавателю или тексту"
-        case .materials: return "Поиск по названию материала"
+        case .users: return "Поиск по UUID, логину, группе"
+        case .reviews: return "Поиск по преподавателю, предмету, тексту"
+        case .materials: return "Поиск по названию файла"
+        case .groq: return "Поиск пользователя в квотах"
+        case .audit: return "Поиск действия в журнале"
+        case .stats: return "Поиск"
         }
     }
+
+    // MARK: - Data Loading
 
     private func loadData() async {
         isLoading = true
         statusMessage = nil
-        switch selectedTab {
-        case .users:
-            users = await SupabaseService.shared.getAllUsers()
-        case .reviews:
-            reviews = await SupabaseService.shared.getAllReviews()
-        case .materials:
-            materials = await SupabaseService.shared.getAllMaterials()
+
+        // Попытка загрузить полный административный дашборд через RPC
+        if let data = try? await SupabaseService.shared.getAdminDashboardData(secret: masterSecret) {
+            self.users = data.users
+            self.auditLogs = data.auditLogs
+            self.stats = data.stats
+        } else {
+            // Fallback REST
+            self.users = await SupabaseService.shared.getAllUsers()
         }
+
+        // Загрузка отзывов и материалов
+        self.reviews = await SupabaseService.shared.getAllReviews()
+        self.materials = await SupabaseService.shared.getAllMaterials()
+
         isLoading = false
     }
 
-    // MARK: - Users Section
+    // MARK: - Users Tab
 
     private var filteredUsers: [SupabaseAppUser] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if q.isEmpty { return users }
         return users.filter { u in
-            (u.fullName?.lowercased().contains(q) ?? false) ||
+            u.userId.lowercased().contains(q) ||
             (u.username?.lowercased().contains(q) ?? false) ||
-            (u.groupName?.lowercased().contains(q) ?? false) ||
-            (u.email?.lowercased().contains(q) ?? false) ||
-            (u.susuEmail?.lowercased().contains(q) ?? false) ||
-            (u.unitName?.lowercased().contains(q) ?? false) ||
-            u.userId.lowercased().contains(q)
+            (u.groupName?.lowercased().contains(q) ?? false)
         }
     }
 
     private var usersSection: some View {
-        Section(header: Text("Всего пользователей: \(filteredUsers.count)")) {
+        Section(header: Text("Пользователи (\(filteredUsers.count))")) {
             ForEach(filteredUsers, id: \.userId) { u in
                 userCard(u)
             }
@@ -153,215 +204,247 @@ public struct AdminView: View {
 
     private func userCard(_ u: SupabaseAppUser) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Header with Full Name and Badges
+            // Header: User identity without personal data
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(u.fullName ?? "Студент ЮУрГУ")
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 6) {
+                        Text("@\(u.username ?? "user")")
+                            .font(.headline)
+                        if u.isAdmin {
+                            Text("👑 Админ")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.15))
+                                .foregroundColor(.purple)
+                                .cornerRadius(6)
+                        }
+                    }
 
-                    if let un = u.username, !un.isEmpty {
-                        Text("@\(un)")
-                            .font(.caption.weight(.medium))
+                    HStack(spacing: 4) {
+                        Text("UUID:")
+                            .font(.system(.caption2, design: .monospaced))
                             .foregroundColor(.secondary)
+                        Text(u.userId.prefix(8) + "...")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.primary)
+                        Button {
+                            UIPasteboard.general.string = u.userId
+                            statusMessage = "UUID скопирован в буфер обмена"
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 10))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 
                 Spacer()
 
-                if u.isAdmin {
-                    Text("👑 Админ")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.15))
-                        .foregroundColor(.purple)
-                        .cornerRadius(6)
-                }
-
-                if u.isBanned {
-                    Text("🚫 Заблокирован")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.red.opacity(0.15))
-                        .foregroundColor(.red)
-                        .cornerRadius(6)
-                } else {
-                    Text("✅ Активен")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.15))
-                        .foregroundColor(.green)
-                        .cornerRadius(6)
+                if let grp = u.groupName, !grp.isEmpty {
+                    Text(grp)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.blue.opacity(0.12))
+                        .foregroundColor(.blue)
+                        .cornerRadius(8)
                 }
             }
 
-            // Student university details
-            VStack(alignment: .leading, spacing: 4) {
-                if let grp = u.groupName, !grp.isEmpty {
-                    Label(grp, systemImage: "person.2.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.blue)
-                }
+            // Permissions Status Indicators
+            HStack(spacing: 8) {
+                permissionPill(title: "Загрузка", allowed: u.canUploadFiles, icon: "arrow.up.doc")
+                permissionPill(title: "Просмотр", allowed: u.canViewMaterials, icon: "eye")
+                permissionPill(title: "Отзывы", allowed: u.canPublishReviews, icon: "pencil.line")
+            }
 
-                if let unit = u.unitName, !unit.isEmpty {
-                    Label(unit, systemImage: "building.columns.fill")
+            // User activity & usage statistics
+            HStack(spacing: 12) {
+                Label("\(u.uploadCount) файн.", systemImage: "folder")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Label("\(u.reviewsCount) отз.", systemImage: "bubble.left")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Label("\(u.groqModerationCalls) Groq", systemImage: "cpu")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if let reason = u.sanctionReason, !reason.isEmpty {
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .foregroundColor(.orange)
+                    Text("Санкция: \(reason)")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.orange)
                 }
-
-                if let spec = u.specialityName, !spec.isEmpty {
-                    Label(spec, systemImage: "graduationcap.fill")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-
-                if let mail = u.susuEmail ?? u.email, !mail.isEmpty {
-                    Label(mail, systemImage: "envelope.fill")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-
-                HStack(spacing: 12) {
-                    if let ver = u.appVersion, !ver.isEmpty {
-                        Text("Версия: \(ver)")
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-                    if let act = u.lastActive {
-                        Text("Активность: \(act.prefix(10))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                if let reason = u.banReason, !reason.isEmpty, u.isBanned {
-                    HStack(alignment: .top, spacing: 4) {
-                        Image(systemName: "exclamationmark.octagon.fill")
-                            .foregroundColor(.red)
-                        Text("Причина: \(reason)")
-                            .font(.caption2)
-                            .foregroundColor(.red)
-                    }
-                    .padding(6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.red.opacity(0.08))
-                    .cornerRadius(6)
-                }
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(6)
             }
 
             Divider()
 
-            // Actions row
-            HStack(spacing: 8) {
-                Button {
-                    toggleUserMaterials(u)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: u.canViewMaterials ? "eye.slash" : "eye.fill")
-                        Text(u.canViewMaterials ? "Скрыть работы" : "Открыть работы")
-                    }
-                    .font(.caption2.weight(.medium))
-                }
-                .buttonStyle(.bordered)
-                .tint(u.canViewMaterials ? .orange : .blue)
+            HStack {
+                Text(u.lastActive != nil ? "Активен: \(u.lastActive!.prefix(10))" : "Недавно")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
-                if u.isBanned {
-                    Button("Разблокировать") {
-                        unbanUser(u)
+                Button {
+                    openPermissionsEditor(for: u)
+                } label: {
+                    Label("Настроить права", systemImage: "slider.horizontal.3")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(.purple)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func permissionPill(title: String, allowed: Bool, icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: allowed ? icon : "xmark.shield.fill")
+                .font(.system(size: 9))
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(allowed ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
+        .foregroundColor(allowed ? .green : .red)
+        .cornerRadius(6)
+    }
+
+    // MARK: - Permissions Editor Sheet
+
+    private func openPermissionsEditor(for u: SupabaseAppUser) {
+        self.selectedUserForPermissions = u
+        self.editCanUpload = u.canUploadFiles
+        self.editCanView = u.canViewMaterials
+        self.editCanReview = u.canPublishReviews
+        self.editCooldownSeconds = u.reviewEditCooldownSeconds
+        self.editSanctionReason = u.sanctionReason ?? ""
+        self.editDurationHours = 0
+        self.showingPermissionsSheet = true
+    }
+
+    private var permissionsSheet: some View {
+        NavigationStack {
+            Form {
+                if let u = selectedUserForPermissions {
+                    Section(header: Text("Пользователь")) {
+                        Text("@\(u.username ?? "user")")
+                            .font(.headline)
+                        Text("UUID: \(u.userId)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        if let g = u.groupName {
+                            Text("Группа: \(g)")
+                                .font(.footnote)
+                        }
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.green)
-                    .font(.caption2.weight(.semibold))
-                } else {
-                    Button("Заблокировать") {
-                        userToBan = u
-                        banReasonInput = "Нарушение правил сообщества"
-                        showingBanAlert = true
+
+                    Section(header: Text("Независимые разрешения")) {
+                        Toggle("Загрузка файлов (can_upload_files)", isOn: $editCanUpload)
+                        Toggle("Просмотр материалов (can_view_materials)", isOn: $editCanView)
+                        Toggle("Публикация отзывов (can_publish_reviews)", isOn: $editCanReview)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                    .font(.caption2.weight(.semibold))
+
+                    Section(header: Text("Защита от спама отзывов")) {
+                        Stepper("Кулдаун между отзывами: \(editCooldownSeconds) сек.", value: $editCooldownSeconds, in: 10...600, step: 10)
+                    }
+
+                    Section(header: Text("Параметры ограничения")) {
+                        TextField("Причина ограничения / санкции", text: $editSanctionReason)
+
+                        Picker("Срок действия", selection: $editDurationHours) {
+                            Text("Бессрочно").tag(0)
+                            Text("1 час").tag(1)
+                            Text("24 часа (сутки)").tag(24)
+                            Text("7 дней (неделя)").tag(168)
+                        }
+                    }
+
+                    Section {
+                        Button("Сбросить все ограничения") {
+                            editCanUpload = true
+                            editCanView = true
+                            editCanReview = true
+                            editSanctionReason = ""
+                            editDurationHours = 0
+                        }
+                        .foregroundColor(.blue)
+                    }
+                }
+            }
+            .navigationTitle("Управление доступом")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") { showingPermissionsSheet = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Сохранить") {
+                        savePermissions()
+                    }
+                    .fontWeight(.bold)
                 }
             }
         }
-        .padding(.vertical, 4)
     }
 
-    private func toggleUserMaterials(_ u: SupabaseAppUser) {
-        let newVal = !u.canViewMaterials
+    private func savePermissions() {
+        guard let u = selectedUserForPermissions else { return }
+        let durationParam = editDurationHours > 0 ? editDurationHours : nil
+        let reasonParam = editSanctionReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editSanctionReason
+
         Task {
             do {
-                _ = try await SupabaseService.shared.adminSetUserStatus(
+                _ = try await SupabaseService.shared.adminSetUserPermissions(
+                    masterSecret: masterSecret,
                     adminUserId: appState.effectiveUserId,
                     targetUserId: u.userId,
-                    canViewMaterials: newVal
+                    canUploadFiles: editCanUpload,
+                    canViewMaterials: editCanView,
+                    canPublishReviews: editCanReview,
+                    cooldownSeconds: editCooldownSeconds,
+                    sanctionReason: reasonParam,
+                    sanctionDurationHours: durationParam
                 )
+
                 if let idx = users.firstIndex(where: { $0.userId == u.userId }) {
-                    users[idx].canViewMaterials = newVal
+                    users[idx].canUploadFiles = editCanUpload
+                    users[idx].canViewMaterials = editCanView
+                    users[idx].canPublishReviews = editCanReview
+                    users[idx].reviewEditCooldownSeconds = editCooldownSeconds
+                    users[idx].sanctionReason = reasonParam
                 }
-                statusMessage = "Статус материалов для \(u.fullName ?? u.userId) обновлен"
+
+                statusMessage = "Права пользователя @\(u.username ?? u.userId) успешно сохранены"
+                showingPermissionsSheet = false
             } catch {
-                statusMessage = "Ошибка: \(error.localizedDescription)"
+                statusMessage = "Ошибка сохранения: \(error.localizedDescription)"
             }
         }
     }
 
-    private func unbanUser(_ u: SupabaseAppUser) {
-        Task {
-            do {
-                _ = try await SupabaseService.shared.adminSetUserStatus(
-                    adminUserId: appState.effectiveUserId,
-                    targetUserId: u.userId,
-                    isBanned: false,
-                    banReason: ""
-                )
-                if let idx = users.firstIndex(where: { $0.userId == u.userId }) {
-                    users[idx].isBanned = false
-                    users[idx].banReason = nil
-                }
-                statusMessage = "Пользователь \(u.fullName ?? u.userId) разблокирован"
-            } catch {
-                statusMessage = "Ошибка: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func confirmBanUser() {
-        guard let u = userToBan else { return }
-        let reason = banReasonInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task {
-            do {
-                _ = try await SupabaseService.shared.adminSetUserStatus(
-                    adminUserId: appState.effectiveUserId,
-                    targetUserId: u.userId,
-                    isBanned: true,
-                    banReason: reason.isEmpty ? "Блокировка администратором" : reason
-                )
-                if let idx = users.firstIndex(where: { $0.userId == u.userId }) {
-                    users[idx].isBanned = true
-                    users[idx].banReason = reason
-                }
-                statusMessage = "Пользователь \(u.fullName ?? u.userId) заблокирован"
-            } catch {
-                statusMessage = "Ошибка блокировки: \(error.localizedDescription)"
-            }
-            userToBan = nil
-        }
-    }
-
-    // MARK: - Reviews Section
+    // MARK: - Reviews Tab
 
     private var filteredReviews: [TeacherReview] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if q.isEmpty { return reviews }
         return reviews.filter { r in
             r.teacherName.lowercased().contains(q) ||
-            r.text.lowercased().contains(q)
+            (r.subjectName?.lowercased().contains(q) ?? false) ||
+            r.text.lowercased().contains(q) ||
+            (r.userId?.lowercased().contains(q) ?? false)
         }
     }
 
@@ -378,19 +461,34 @@ public struct AdminView: View {
                             .foregroundColor(.secondary)
                     }
 
+                    if let subj = r.subjectName, !subj.isEmpty {
+                        Text("Дисциплина: \(subj)")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+
                     Text(r.text)
                         .font(.footnote)
                         .foregroundColor(.primary)
 
                     HStack {
-                        Text("👍 \(r.likes)  👎 \(r.dislikes)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        if r.editCount > 0 {
+                            Text("Правки: \(r.editCount)")
+                                .font(.caption2.weight(.medium))
+                                .foregroundColor(.orange)
+                        }
+
+                        if let author = r.userId {
+                            Text("Автор: \(author.prefix(8))...")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
 
                         Spacer()
 
                         Button(role: .destructive) {
-                            deleteReview(r)
+                            reviewToDelete = r
+                            showingDeleteReviewAlert = true
                         } label: {
                             Label("Удалить", systemImage: "trash")
                                 .font(.caption)
@@ -402,7 +500,17 @@ public struct AdminView: View {
         }
     }
 
-    // MARK: - Materials Section
+    private func confirmDeleteReview(_ r: TeacherReview) async {
+        do {
+            try await SupabaseService.shared.deleteReview(id: r.id, userId: appState.effectiveUserId, isAdmin: true)
+            reviews.removeAll(where: { $0.id == r.id })
+            statusMessage = "Отзыв успешно удалён"
+        } catch {
+            statusMessage = "Ошибка удаления отзыва: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Materials Tab
 
     private var filteredMaterials: [MaterialItem] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -410,7 +518,8 @@ public struct AdminView: View {
         return materials.filter { m in
             m.title.lowercased().contains(q) ||
             m.fileName.lowercased().contains(q) ||
-            (m.teacherName?.lowercased().contains(q) ?? false)
+            (m.teacherName?.lowercased().contains(q) ?? false) ||
+            (m.userId?.lowercased().contains(q) ?? false)
         }
     }
 
@@ -427,14 +536,29 @@ public struct AdminView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Text("\(m.fileName) • \(m.teacherName ?? "Без преподавателя")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        Text(m.fileName)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        if m.fileSizeBytes > 0 {
+                            Text(String(format: "• %.2f МБ", Double(m.fileSizeBytes) / 1024.0 / 1024.0))
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.primary)
+                        }
+                    }
 
                     HStack {
+                        if let author = m.userId {
+                            Text("Автор: \(author.prefix(8))...")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+
                         Spacer()
+
                         Button(role: .destructive) {
-                            deleteMaterial(m)
+                            materialToDelete = m
+                            showingDeleteMaterialAlert = true
                         } label: {
                             Label("Удалить файл", systemImage: "trash")
                                 .font(.caption)
@@ -446,27 +570,169 @@ public struct AdminView: View {
         }
     }
 
-    private func deleteReview(_ r: TeacherReview) {
-        Task {
-            do {
-                try await SupabaseService.shared.deleteReview(id: r.id)
-                reviews.removeAll(where: { $0.id == r.id })
-                statusMessage = "Отзыв успешно удалён"
-            } catch {
-                statusMessage = "Ошибка удаления отзыва: \(error.localizedDescription)"
+    private func confirmDeleteMaterial(_ m: MaterialItem) async {
+        do {
+            // Удаление из БД
+            try await SupabaseService.shared.deleteMaterial(id: m.id)
+
+            // Если есть Drive file ID, удаляем и с Google Drive
+            if let driveId = m.driveFileId, !driveId.isEmpty {
+                await GoogleDriveService.shared.deleteFile(fileId: driveId)
+            }
+
+            materials.removeAll(where: { $0.id == m.id })
+            statusMessage = "Материал успешно удалён"
+        } catch {
+            statusMessage = "Ошибка удаления материала: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Groq Quota Tab
+
+    private var groqSection: some View {
+        Group {
+            Section(header: Text("Сводка использования Groq")) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Всего вызовов")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(stats?.totalGroqCalls ?? users.reduce(0, { $0 + $1.groqModerationCalls }))")
+                            .font(.title2.weight(.bold))
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Потреблено токенов")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(stats?.totalGroqTokens ?? users.reduce(0, { $0 + $1.groqTokensUsed }))")
+                            .font(.title2.weight(.bold))
+                            .foregroundColor(.purple)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                Text("Бесплатный тариф Groq: 30 запросов в минуту, до 14 400 запросов в сутки. Все запросы модерируются через pre-filter и 6-часовой кэш Google Apps Script.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Section(header: Text("Пользователи с наибольшим расходом")) {
+                let sortedByGroq = users.sorted(by: { $0.groqModerationCalls > $1.groqModerationCalls })
+                ForEach(sortedByGroq.prefix(15), id: \.userId) { u in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("@\(u.username ?? "user")")
+                                .font(.subheadline.weight(.semibold))
+                            Text("UUID: \(u.userId.prefix(8))...")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(u.groqModerationCalls) запросов")
+                                .font(.subheadline.weight(.bold))
+                            Text("\(u.groqTokensUsed) токенов")
+                                .font(.caption2)
+                                .foregroundColor(.purple)
+                        }
+                    }
+                }
             }
         }
     }
 
-    private func deleteMaterial(_ m: MaterialItem) {
-        Task {
-            do {
-                try await SupabaseService.shared.deleteMaterial(id: m.id)
-                materials.removeAll(where: { $0.id == m.id })
-                statusMessage = "Материал успешно удалён"
-            } catch {
-                statusMessage = "Ошибка удаления материала: \(error.localizedDescription)"
+    // MARK: - Audit Log Tab
+
+    private var auditSection: some View {
+        Section(header: Text("Журнал действий администраторов (\(auditLogs.count))")) {
+            if auditLogs.isEmpty {
+                Text("Журнал аудита пуст.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(auditLogs) { log in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(log.action)
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.purple)
+                            Spacer()
+                            Text(log.createdAt.prefix(19).replacingOccurrences(of: "T", with: " "))
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+
+                        if let target = log.targetUserId {
+                            Text("Целевой пользователь: \(target.prefix(8))...")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(.primary)
+                        }
+
+                        if let reason = log.reason, !reason.isEmpty {
+                            Text("Детали: \(reason)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
             }
+        }
+    }
+
+    // MARK: - Infrastructure Tab
+
+    private var statsSection: some View {
+        Group {
+            Section(header: Text("Показатели платформы")) {
+                metricRow(title: "Всего пользователей", value: "\(stats?.totalUsers ?? users.count)")
+                metricRow(title: "Активных за 24 часа", value: "\(stats?.activeUsers24h ?? 0)")
+                metricRow(title: "Пользователей с ограничениями", value: "\(stats?.sanctionedUsers ?? users.filter({ !$0.canUploadFiles || !$0.canPublishReviews || !$0.canViewMaterials }).count)")
+                metricRow(title: "Опубликовано отзывов", value: "\(stats?.totalReviews ?? reviews.count)")
+                metricRow(title: "Загружено материалов", value: "\(stats?.totalMaterials ?? materials.count)")
+                if let bytes = stats?.totalStorageBytes {
+                    metricRow(title: "Занято на Google Drive", value: String(format: "%.2f МБ / 15 360 МБ", Double(bytes) / 1024.0 / 1024.0))
+                }
+            }
+
+            Section(header: Text("Статус бесплатной инфраструктуры")) {
+                serviceStatusRow(service: "Supabase PostgreSQL", desc: "База данных (Free Tier, 500 МБ лимит)", status: "OK")
+                serviceStatusRow(service: "Google Drive Storage", desc: "Файловое хранилище (15 ГБ бесплатно)", status: "OK")
+                serviceStatusRow(service: "Google Apps Script", desc: "Серверный шлюз и кэш", status: "OK")
+                serviceStatusRow(service: "Groq Llama 3.3 70B", desc: "Модерация и саммари (Free API)", status: "OK")
+            }
+        }
+    }
+
+    private func metricRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundColor(.primary)
+        }
+    }
+
+    private func serviceStatusRow(service: String, desc: String, status: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(service)
+                    .font(.subheadline.weight(.medium))
+                Text(desc)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Text(status)
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.green.opacity(0.12))
+                .foregroundColor(.green)
+                .cornerRadius(6)
         }
     }
 }

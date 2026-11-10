@@ -9,46 +9,23 @@ public actor SusuJournalService {
 
     private init() {}
 
-    private func authHeaders(token: String) -> [String: String] {
+    private func defaultHeaders() -> [String: String] {
         [
             "Accept": "application/json, text/plain, */*",
-            "Authorization": "Bearer \(token)",
             "Referer": "\(APIEndpoints.susuBase)/study-activity/"
         ]
     }
 
     public func fetchSubjects(term: Int) async throws -> [Subject] {
-        var token: String
-        do {
-            token = try await auth.validToken()
-        } catch {
-            // Offline fallback
-            if let cached = await store.loadSubjects(term: term), !cached.isEmpty {
-                return cached
-            }
-            throw error
-        }
-
         guard let url = URL(string: APIEndpoints.subjects(term: term)) else {
             throw NetworkError.invalidURL(APIEndpoints.subjects(term: term))
         }
 
         do {
-            var rawList: [RawSubjectResponse]
-            do {
-                rawList = try await client.requestJSON(
-                    url: url,
-                    headers: authHeaders(token: token)
-                )
-            } catch NetworkError.unauthorized {
-                // Try refresh token once
-                let refreshed = try await auth.refreshToken()
-                token = refreshed.accessToken
-                rawList = try await client.requestJSON(
-                    url: url,
-                    headers: authHeaders(token: token)
-                )
-            }
+            let rawList: [RawSubjectResponse] = try await auth.performAuthorizedRequest(
+                url: url,
+                headers: defaultHeaders()
+            )
 
             let hiddenSet = await store.loadHiddenSubjects()
 
@@ -71,28 +48,11 @@ public actor SusuJournalService {
     }
 
     public func fetchJournal(disciplineId: String, term: Int, isCourseWork: Bool = false) async throws -> JournalData {
-        var token: String
-        do {
-            token = try await auth.validToken()
-        } catch {
-            // Offline fallback
-            if let cached = await store.loadJournal(disciplineId: disciplineId, term: term) {
-                return cached
-            }
-            throw error
-        }
-
         func requestJournal(isCw: Bool) async throws -> RawJournalResponse {
             guard let url = URL(string: APIEndpoints.journal(disciplineId: disciplineId, term: term, isCourseWork: isCw)) else {
                 throw NetworkError.invalidURL(APIEndpoints.journal(disciplineId: disciplineId, term: term, isCourseWork: isCw))
             }
-            do {
-                return try await client.requestJSON(url: url, headers: authHeaders(token: token))
-            } catch NetworkError.unauthorized {
-                let refreshed = try await auth.refreshToken()
-                token = refreshed.accessToken
-                return try await client.requestJSON(url: url, headers: authHeaders(token: token))
-            }
+            return try await auth.performAuthorizedRequest(url: url, headers: defaultHeaders())
         }
 
         do {

@@ -2,9 +2,11 @@ import SwiftUI
 
 public struct AddReviewSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     public let teacherName: String
     public let subjectName: String
     public let subjectId: String?
+    public let reviewToEdit: TeacherReview?
     public let onReviewAdded: () -> Void
 
     @State private var text: String = ""
@@ -22,17 +24,37 @@ public struct AddReviewSheet: View {
         teacherName: String,
         subjectName: String,
         subjectId: String? = nil,
+        reviewToEdit: TeacherReview? = nil,
         onReviewAdded: @escaping () -> Void
     ) {
         self.teacherName = teacherName
         self.subjectName = subjectName
         self.subjectId = subjectId
+        self.reviewToEdit = reviewToEdit
         self.onReviewAdded = onReviewAdded
+
+        _text = State(initialValue: reviewToEdit?.text ?? "")
+        _difficulty = State(initialValue: reviewToEdit?.difficulty ?? 3)
+        _givesAvtomat = State(initialValue: reviewToEdit?.givesAvtomat ?? false)
+        _attendanceStrict = State(initialValue: reviewToEdit?.attendanceStrict ?? false)
+        _year = State(initialValue: reviewToEdit?.year ?? Calendar.current.component(.year, from: Date()))
     }
 
     public var body: some View {
         NavigationStack {
             Form {
+                if !appState.canPublishReviews {
+                    Section {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "hand.raised.fill")
+                                .foregroundColor(.orange)
+                            Text("Публикация отзывов для вашей учётной записи отключена администратором.")
+                                .font(.footnote)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+
                 Section(header: Text("Преподаватель и предмет")) {
                     Text("👨‍🏫 \(teacherName)")
                         .font(.headline)
@@ -80,7 +102,7 @@ public struct AddReviewSheet: View {
                     }
                 }
             }
-            .navigationTitle("Новый совет")
+            .navigationTitle(reviewToEdit != nil ? "Редактировать отзыв" : "Новый совет")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -93,28 +115,34 @@ public struct AddReviewSheet: View {
                         if isSubmitting {
                             ProgressView()
                         } else {
-                            Text("Опубликовать")
+                            Text(reviewToEdit != nil ? "Сохранить" : "Опубликовать")
                                 .fontWeight(.bold)
                         }
                     }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).count < 15 || isSubmitting)
+                    .disabled(!appState.canPublishReviews || text.trimmingCharacters(in: .whitespacesAndNewlines).count < 15 || isSubmitting)
                 }
             }
         }
     }
 
     private func submitReview() {
+        guard appState.canPublishReviews else {
+            isError = true
+            statusMessage = "Публикация отзывов отключена администратором."
+            return
+        }
+
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard cleaned.count >= 15 else { return }
 
-        // Cooldown check
-        let lastTime = UserDefaults.standard.double(forKey: "last_review_submit_time")
+        // Cooldown check (настраиваемый с сервера cooldown)
+        let lastTime = UserDefaults.standard.double(forKey: "last_review_submit_time_\(appState.effectiveUserId)")
         let now = Date().timeIntervalSince1970
-        let cooldown: Double = 30.0
+        let cooldown = Double(appState.reviewEditCooldownSeconds)
         if now - lastTime < cooldown {
             let remain = Int(ceil(cooldown - (now - lastTime)))
             isError = true
-            statusMessage = "Пожалуйста, подождите \(remain) сек. перед отправкой следующего отзыва."
+            statusMessage = "Пожалуйста, подождите \(remain) сек. перед отправкой или редактированием отзыва."
             return
         }
 
@@ -124,7 +152,7 @@ public struct AddReviewSheet: View {
 
         Task {
             // Step 1: AI moderation through Groq
-            let modResult = await GroqModerationService.shared.moderateReview(text: cleaned)
+            let modResult = await GroqModerationService.shared.moderateReview(text: cleaned, userId: appState.effectiveUserId)
             guard modResult.allowed else {
                 isSubmitting = false
                 isError = true
@@ -134,8 +162,11 @@ public struct AddReviewSheet: View {
 
             statusMessage = "Сохранение в базу..."
 
-            // Step 2: Save to Supabase (с корректным UUID subjectId)
+            // Step 2: Save to Supabase (с корректным UUID subjectId и userId)
+            let reviewId = reviewToEdit?.id ?? UUID().uuidString.lowercased()
             let review = TeacherReview(
+                id: reviewId,
+                userId: appState.effectiveUserId,
                 teacherName: teacherName,
                 subjectId: subjectId,
                 subjectName: subjectName,
@@ -147,20 +178,12 @@ public struct AddReviewSheet: View {
             )
 
             do {
-                _ = try await SupabaseService.shared.addTeacherReview(review: review)
-                UserDefaults.standard.set(now, forKey: "last_review_submit_time")
-
-                // Step 3: Check if summary needs regeneration
-                let (reviews, _) = await SupabaseService.shared.getTeacherReviews(teacherName: teacherName)
-                if reviews.count == 1 || reviews.count % 5 == 0 {
-                    if let summary = await GroqModerationService.shared.generateTeacherSummary(teacherName: teacherName, reviews: reviews) {
-                        await SupabaseService.shared.saveTeacherSummary(teacherName: teacherName, summaryText: summary, count: reviews.count)
-                    }
-                }
+                _ = try await SupabaseService.shared.addTeacherReview(review: review, userId: appState.effectiveUserId)
+                UserDefaults.standard.set(now, forKey: "last_review_submit_time_\(appState.effectiveUserId)")
 
                 isSubmitting = false
                 isError = false
-                statusMessage = "Отзыв успешно опубликован!"
+                statusMessage = reviewToEdit != nil ? "Отзыв успешно обновлён!" : "Отзыв успешно опубликован!"
                 onReviewAdded()
 
                 try? await Task.sleep(nanoseconds: 600_000_000)
