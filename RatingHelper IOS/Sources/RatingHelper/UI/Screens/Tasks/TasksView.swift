@@ -78,6 +78,18 @@ public struct TasksView: View {
             .navigationTitle("Учебный план")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        TaskNotificationManager.shared.clearBadgeAndDeliveredNotifications()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bell.slash")
+                            Text("Очистить")
+                                .font(.caption.weight(.medium))
+                        }
+                    }
+                }
+
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingCreateSheet = true
@@ -86,6 +98,9 @@ public struct TasksView: View {
                             .fontWeight(.semibold)
                     }
                 }
+            }
+            .onAppear {
+                TaskNotificationManager.shared.clearBadgeAndDeliveredNotifications()
             }
             .searchable(text: $taskManager.searchQuery, prompt: "Поиск по названию или предмету")
             .sheet(isPresented: $showingCreateSheet) {
@@ -112,13 +127,13 @@ public struct TasksView: View {
 
                 ForEach(appState.subjects) { sub in
                     FilterChip(
-                        title: sub.disciplineName,
-                        isSelected: taskManager.selectedDisciplineFilter == sub.disciplineName
+                        title: sub.displayName,
+                        isSelected: taskManager.selectedDisciplineFilter == sub.displayName
                     ) {
-                        if taskManager.selectedDisciplineFilter == sub.disciplineName {
+                        if taskManager.selectedDisciplineFilter == sub.displayName {
                             taskManager.selectedDisciplineFilter = nil
                         } else {
-                            taskManager.selectedDisciplineFilter = sub.disciplineName
+                            taskManager.selectedDisciplineFilter = sub.displayName
                         }
                     }
                 }
@@ -163,10 +178,6 @@ public struct TasksView: View {
             } else {
                 ScrollViewReader { proxy in
                     List {
-                        Color.clear.frame(height: 0).id("tasks_top_anchor")
-                            .listRowInsets(EdgeInsets())
-                            .listRowSeparator(.hidden)
-
                         // 1. Просроченные задачи
                     if !taskManager.overdueTasks.isEmpty {
                         Section {
@@ -179,6 +190,18 @@ public struct TasksView: View {
                                     .foregroundColor(AppTheme.dangerRed)
                                 Text("Просроченные (\(taskManager.overdueTasks.count))")
                                     .foregroundColor(AppTheme.dangerRed)
+                                Spacer()
+                                Button("Прочитано всё") {
+                                    Task {
+                                        for t in taskManager.overdueTasks {
+                                            await taskManager.toggleTaskCompletion(t)
+                                        }
+                                        TaskNotificationManager.shared.clearBadgeAndDeliveredNotifications()
+                                    }
+                                }
+                                .font(.caption2.weight(.semibold))
+                                .textCase(nil)
+                                .foregroundColor(AppTheme.susuBluePrimary)
                             }
                         }
                     }
@@ -235,12 +258,23 @@ public struct TasksView: View {
                 .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
                     if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 2 {
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            proxy.scrollTo("tasks_top_anchor", anchor: .top)
+                            if let firstId = firstVisibleTaskId {
+                                proxy.scrollTo(firstId, anchor: .top)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    private var firstVisibleTaskId: UUID? {
+        if let first = taskManager.overdueTasks.first { return first.id }
+        if let first = taskManager.todayTasks.first { return first.id }
+        if let first = taskManager.upcomingTasks.first { return first.id }
+        if let first = taskManager.laterTasks.first { return first.id }
+        if let first = taskManager.completedTasks.first { return first.id }
+        return nil
     }
 
     private func taskRow(_ task: StudyTask) -> some View {
@@ -259,5 +293,35 @@ public struct TasksView: View {
                 Task { await taskManager.postponeTask(id: task.id, days: days) }
             }
         )
+        .swipeActions(edge: .leading) {
+            Button {
+                Task {
+                    await taskManager.toggleTaskCompletion(task)
+                    TaskNotificationManager.shared.clearBadgeAndDeliveredNotifications()
+                }
+            } label: {
+                Label(task.status == .completed ? "Вернуть" : "Выполнено", systemImage: "checkmark.circle.fill")
+            }
+            .tint(AppTheme.successGreen)
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                Task {
+                    await taskManager.deleteTask(id: task.id)
+                    TaskNotificationManager.shared.clearBadgeAndDeliveredNotifications()
+                }
+            } label: {
+                Label("Удалить", systemImage: "trash")
+            }
+
+            Button {
+                Task {
+                    await taskManager.postponeTask(id: task.id, days: 1)
+                }
+            } label: {
+                Label("+1 день", systemImage: "calendar.badge.clock")
+            }
+            .tint(.orange)
+        }
     }
 }

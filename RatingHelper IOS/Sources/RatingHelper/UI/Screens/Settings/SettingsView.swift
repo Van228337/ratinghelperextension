@@ -19,14 +19,8 @@ public struct SettingsView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 Form {
-                    Section {
-                        Color.clear.frame(height: 0).id("settings_top_anchor")
-                            .listRowInsets(EdgeInsets())
-                            .listRowSeparator(.hidden)
-                    }
-
                     // User Session Section
-                Section(header: Text("Учётная запись ЮУрГУ")) {
+                    Section(header: Text("Учётная запись ЮУрГУ").id("settings_top_anchor")) {
                     if let session = appState.session {
                         HStack {
                             Image(systemName: "person.crop.circle.fill")
@@ -86,6 +80,15 @@ public struct SettingsView: View {
                     }
                 }
 
+                // Documents
+                Section(header: Text("Документы")) {
+                    NavigationLink {
+                        TranscriptSettingsView()
+                    } label: {
+                        Label("Выписка с оценками", systemImage: "doc.richtext")
+                    }
+                }
+
                 // Backup and Restore Section
                 Section(header: Text("Резервное копирование данных"), footer: Text("Используйте экспорт перед повторной переустановкой приложения через xtool для 100% сохранности всех смоделированных планов.")) {
                     Button {
@@ -128,7 +131,7 @@ public struct SettingsView: View {
                         Button {
                             handleVersionTap()
                         } label: {
-                            Text("Версия 2.0.0 (xtool native build)")
+                            Text("Версия 2.1.0 (xtool native build)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }

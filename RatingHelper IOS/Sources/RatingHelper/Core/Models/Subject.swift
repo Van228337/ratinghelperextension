@@ -133,7 +133,23 @@ public struct RawSubjectResponse: Codable, Sendable {
 }
 
 public struct Subject: Identifiable, Codable, Hashable, Sendable {
-    public var id: String { disciplineId }
+    public var isCourseWork: Bool {
+        assessmentType == .coursework || assessmentType == .courseProject
+    }
+
+    public var id: String {
+        isCourseWork ? "\(disciplineId)_cw" : disciplineId
+    }
+
+    public var displayName: String {
+        if assessmentType == .coursework {
+            return "\(disciplineName) (КР)"
+        } else if assessmentType == .courseProject {
+            return "\(disciplineName) (КП)"
+        }
+        return disciplineName
+    }
+
     public let disciplineId: String
     public var disciplineName: String
     public var rating: Double

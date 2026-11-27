@@ -7,6 +7,7 @@ public struct CheckpointRowView: View {
     public let onOpenMaterials: () -> Void
     public let onAddTask: () -> Void
     public var communityMaterialsEnabled: Bool = true
+    public var notice: CheckpointChangeNotice? = nil
 
     @State private var showingScoreSheet: Bool = false
 
@@ -30,7 +31,8 @@ public struct CheckpointRowView: View {
         onScoreChange: @escaping (Double) -> Void,
         onOpenMaterials: @escaping () -> Void,
         onAddTask: @escaping () -> Void,
-        communityMaterialsEnabled: Bool = true
+        communityMaterialsEnabled: Bool = true,
+        notice: CheckpointChangeNotice? = nil
     ) {
         self.entry = entry
         self.currentScore = currentScore
@@ -38,6 +40,7 @@ public struct CheckpointRowView: View {
         self.onOpenMaterials = onOpenMaterials
         self.onAddTask = onAddTask
         self.communityMaterialsEnabled = communityMaterialsEnabled
+        self.notice = notice
     }
 
     public var body: some View {
@@ -49,6 +52,19 @@ public struct CheckpointRowView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.primary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let n = notice {
+                        HStack(spacing: 4) {
+                            Image(systemName: n.isWeightChange ? "scalemass.fill" : "arrow.down.circle.fill")
+                            Text(n.message)
+                        }
+                        .font(.caption2.weight(.medium))
+                        .foregroundColor(n.isWeightChange ? .orange : .red)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(n.isWeightChange ? Color.orange.opacity(0.12) : Color.red.opacity(0.12))
+                        .cornerRadius(4)
+                    }
 
                     HStack(spacing: 6) {
                         Text("Вес: \(String(format: "%.2f", entry.weight))")

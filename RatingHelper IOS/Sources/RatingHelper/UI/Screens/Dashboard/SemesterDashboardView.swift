@@ -123,8 +123,8 @@ public struct SemesterDashboardView: View {
 
                                         Button {
                                             Task {
-                                                await LocalStore.shared.removeSemesterHistoryItem(name: item.name)
-                                                history.removeAll(where: { $0.name == item.name })
+                                                await LocalStore.shared.removeSemesterHistoryItem(id: item.id)
+                                                history.removeAll(where: { $0.id == item.id })
                                             }
                                         } label: {
                                             Image(systemName: "xmark.circle.fill")

@@ -90,6 +90,11 @@ public struct JournalView: View {
                     }
                     .padding(.top, 40)
                 } else if let j = journal {
+                    // Checkpoint change notifications banner
+                    if !appState.activeCheckpointNotices.isEmpty {
+                        checkpointNoticesBanner
+                    }
+
                     // Draft active banner
                     if appState.activeDraft != nil {
                         draftBanner
@@ -302,6 +307,71 @@ public struct JournalView: View {
     }
 
     // MARK: - Subviews
+    private var checkpointNoticesBanner: some View {
+        VStack(spacing: 8) {
+            ForEach(appState.activeCheckpointNotices) { notice in
+                checkpointNoticeRow(notice)
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private func checkpointNoticeRow(_ notice: CheckpointChangeNotice) -> some View {
+        let isWeight = notice.isWeightChange
+        let themeColor: Color = isWeight ? .orange : .red
+
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isWeight ? "scalemass.fill" : "arrow.down.circle.fill")
+                .foregroundColor(themeColor)
+                .font(.title3)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(isWeight ? "Изменение параметров точки" : "Снижение балла")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(themeColor)
+
+                Text(notice.message)
+                    .font(.footnote)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(formatNoticeDate(notice.detectedAt))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                Task {
+                    await appState.dismissCheckpointNotice(id: notice.id)
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .font(.body)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(themeColor.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(themeColor.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    private func formatNoticeDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "d MMMM в HH:mm"
+        return f.string(from: date)
+    }
+
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -463,6 +533,8 @@ public struct JournalView: View {
                     let globalIdx = globalStartIndex + idx
                     let current = globalIdx < scores.count ? scores[globalIdx] : entry.current
 
+                    let notice = appState.activeCheckpointNotices.first(where: { $0.checkpointTitle == entry.title })
+
                     CheckpointRowView(
                         entry: entry,
                         currentScore: current,
@@ -478,7 +550,8 @@ public struct JournalView: View {
                             selectedCheckpointForTask = entry
                             showingAddTaskSheet = true
                         },
-                        communityMaterialsEnabled: appState.settings.communityMaterials
+                        communityMaterialsEnabled: appState.settings.communityMaterials,
+                        notice: notice
                     )
                     .padding(.horizontal, 14)
                     .padding(.vertical, 4)

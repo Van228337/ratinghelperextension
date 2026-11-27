@@ -21,6 +21,13 @@ public struct RatingHistoryView: View {
         appState.subjects.filter { !$0.isHidden && $0.termNumber == appState.selectedTerm }
     }
 
+    private var selectedSubjectTitle: String {
+        if let id = selectedSubjectId, let sub = availableSubjects.first(where: { $0.id == id }) {
+            return sub.displayName
+        }
+        return "Общий рейтинг"
+    }
+
     private var visiblePoints: [RatingHistoryPoint] {
         guard let days = period.days else { return points }
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? .distantPast
@@ -80,43 +87,62 @@ public struct RatingHistoryView: View {
                 .pickerStyle(.menu)
             }
 
-            // Переключатель дисциплины (Общий или конкретный предмет)
+            // Выпадающий список выбора дисциплины
             if !availableSubjects.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                Menu {
+                    Button {
+                        selectedSubjectId = nil
+                        manuallySelectedPointId = nil
+                        selectedDate = nil
+                        Task { await load() }
+                    } label: {
+                        HStack {
+                            Text("Общий рейтинг")
+                            if selectedSubjectId == nil {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    ForEach(availableSubjects) { sub in
                         Button {
-                            selectedSubjectId = nil
+                            selectedSubjectId = sub.id
                             manuallySelectedPointId = nil
                             selectedDate = nil
                             Task { await load() }
                         } label: {
-                            Text("Общий")
-                                .font(.caption.weight(selectedSubjectId == nil ? .bold : .medium))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(selectedSubjectId == nil ? AppTheme.susuBluePrimary : Color(.secondarySystemBackground))
-                                .foregroundColor(selectedSubjectId == nil ? .white : .primary)
-                                .clipShape(Capsule())
-                        }
-
-                        ForEach(availableSubjects) { sub in
-                            Button {
-                                selectedSubjectId = sub.disciplineId
-                                manuallySelectedPointId = nil
-                                selectedDate = nil
-                                Task { await load() }
-                            } label: {
-                                Text(sub.disciplineName)
-                                    .font(.caption.weight(selectedSubjectId == sub.disciplineId ? .bold : .medium))
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(selectedSubjectId == sub.disciplineId ? AppTheme.susuBluePrimary : Color(.secondarySystemBackground))
-                                    .foregroundColor(selectedSubjectId == sub.disciplineId ? .white : .primary)
-                                    .clipShape(Capsule())
+                            HStack {
+                                Text(sub.displayName)
+                                if selectedSubjectId == sub.id {
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
                     }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: selectedSubjectId == nil ? "chart.line.uptrend.xyaxis" : "book.closed.fill")
+                            .font(.subheadline)
+                            .foregroundColor(AppTheme.susuBluePrimary)
+
+                        Text(selectedSubjectTitle)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Spacer()
+
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(10)
                 }
             }
 
@@ -181,7 +207,8 @@ public struct RatingHistoryView: View {
                         // Фоновый градиент под графиком
                         AreaMark(
                             x: .value("Дата", date(for: point)),
-                            y: .value("Рейтинг", point.rating)
+                            yStart: .value("Мин", yDomain.lowerBound),
+                            yEnd: .value("Рейтинг", point.rating)
                         )
                         .foregroundStyle(
                             LinearGradient(
@@ -209,6 +236,9 @@ public struct RatingHistoryView: View {
                     }
                 }
                 .chartYScale(domain: yDomain)
+                .chartPlotStyle { plotContent in
+                    plotContent.clipped()
+                }
                 .chartYAxis {
                     AxisMarks(position: .leading) { val in
                         AxisGridLine()

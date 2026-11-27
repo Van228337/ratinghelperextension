@@ -15,7 +15,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
 }
 
 public struct SemesterHistoryItem: Identifiable, Codable, Hashable, Sendable {
-    public var id: String { name }
+    public var id: String { subjectId ?? name }
     public var name: String
     public var teacher: String
     public var subjectId: String?
@@ -194,7 +194,7 @@ public actor LocalStore {
 
     public func saveSemesterHistoryItem(_ item: SemesterHistoryItem) {
         var list = loadSemesterHistory()
-        if let idx = list.firstIndex(where: { $0.name == item.name }) {
+        if let idx = list.firstIndex(where: { $0.id == item.id }) {
             list[idx] = item
         } else {
             list.append(item)
@@ -202,14 +202,110 @@ public actor LocalStore {
         write(list, to: "semester_history.json")
     }
 
-    public func removeSemesterHistoryItem(name: String) {
+    public func removeSemesterHistoryItem(id: String) {
         var list = loadSemesterHistory()
-        list.removeAll(where: { $0.name == name })
+        list.removeAll(where: { $0.id == id || $0.name == id })
         write(list, to: "semester_history.json")
+    }
+
+    public func removeSemesterHistoryItem(name: String) {
+        removeSemesterHistoryItem(id: name)
     }
 
     public func clearSemesterHistory() {
         write([SemesterHistoryItem](), to: "semester_history.json")
+    }
+
+    // MARK: - Checkpoint Snapshots & Change Tracking
+    public func loadCheckpointSnapshot(subjectId: String) -> [CheckpointSnapshotItem] {
+        read([CheckpointSnapshotItem].self, from: "cp_snap_\(subjectId).json") ?? []
+    }
+
+    public func saveCheckpointSnapshot(subjectId: String, items: [CheckpointSnapshotItem]) {
+        write(items, to: "cp_snap_\(subjectId).json")
+    }
+
+    public func loadCheckpointNotices(subjectId: String) -> [CheckpointChangeNotice] {
+        let all = read([CheckpointChangeNotice].self, from: "cp_notices_\(subjectId).json") ?? []
+        return all.filter { !$0.isDismissed }
+    }
+
+    public func dismissCheckpointNotice(subjectId: String, noticeId: UUID) {
+        var all = read([CheckpointChangeNotice].self, from: "cp_notices_\(subjectId).json") ?? []
+        if let idx = all.firstIndex(where: { $0.id == noticeId }) {
+            all[idx].isDismissed = true
+            write(all, to: "cp_notices_\(subjectId).json")
+        }
+    }
+
+    public func clearCheckpointNotices(subjectId: String) {
+        write([CheckpointChangeNotice](), to: "cp_notices_\(subjectId).json")
+    }
+
+    public func checkAndRecordCheckpointChanges(
+        subjectId: String,
+        subjectName: String,
+        currentItems: [CheckpointItem]
+    ) -> [CheckpointChangeNotice] {
+        let previous = loadCheckpointSnapshot(subjectId: subjectId)
+        var notices = loadCheckpointNotices(subjectId: subjectId)
+
+        func fmtNum(_ val: Double) -> String {
+            if val.truncatingRemainder(dividingBy: 1) == 0 {
+                return String(format: "%.0f", val)
+            } else {
+                return String(format: "%.2f", val)
+            }
+        }
+
+        // If we have previous snapshot, compare with current items
+        if !previous.isEmpty {
+            for current in currentItems {
+                guard let prev = previous.first(where: { $0.title == current.title }) else {
+                    continue
+                }
+
+                // 1. Check if weight changed
+                if abs(current.weight - prev.weight) > 0.001 {
+                    let text = "Преподаватель изменил вес точки «\(current.title)»: было \(fmtNum(prev.weight)), стало \(fmtNum(current.weight))"
+                    if !notices.contains(where: { $0.checkpointTitle == current.title && $0.message == text }) {
+                        notices.append(CheckpointChangeNotice(
+                            subjectId: subjectId,
+                            checkpointTitle: current.title,
+                            changeType: .weightChanged(oldWeight: prev.weight, newWeight: current.weight, maxScore: current.max),
+                            message: text
+                        ))
+                    }
+                }
+
+                // 2. Check if student score decreased
+                if current.current < (prev.score - 0.001) {
+                    let text = "Снизился балл за точку «\(current.title)»: с \(fmtNum(prev.score)) до \(fmtNum(current.current)) (из \(fmtNum(current.max)))"
+                    if !notices.contains(where: { $0.checkpointTitle == current.title && $0.message == text }) {
+                        notices.append(CheckpointChangeNotice(
+                            subjectId: subjectId,
+                            checkpointTitle: current.title,
+                            changeType: .scoreDecreased(oldScore: prev.score, newScore: current.current, maxScore: current.max),
+                            message: text
+                        ))
+                    }
+                }
+            }
+            write(notices, to: "cp_notices_\(subjectId).json")
+        }
+
+        // Always update snapshot with latest items
+        let newSnapshots = currentItems.map {
+            CheckpointSnapshotItem(
+                title: $0.title,
+                score: $0.current,
+                maxScore: $0.max,
+                weight: $0.weight
+            )
+        }
+        saveCheckpointSnapshot(subjectId: subjectId, items: newSnapshots)
+
+        return notices.filter { !$0.isDismissed }
     }
 
     // MARK: - User Votes

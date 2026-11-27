@@ -4,6 +4,7 @@ public struct SubjectsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selectedTab: SubjectTab = .active
     @State private var searchText: String = ""
+    @State private var showingPass: Bool = false
 
     public enum SubjectTab: String, CaseIterable {
         case active = "Активные"
@@ -137,57 +138,74 @@ public struct SubjectsView: View {
                 } else {
                     ScrollViewReader { proxy in
                         List {
-                            Color.clear.frame(height: 0).id("subjects_top_anchor")
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-
                             ForEach(groupedSubjects, id: \.0) { group in
-                            Section {
-                                ForEach(group.1) { subject in
-                                    if subject.hasJournal {
-                                        NavigationLink {
-                                            JournalView(subject: subject)
-                                        } label: {
+                                Section {
+                                    ForEach(group.1) { subject in
+                                        if subject.hasJournal {
+                                            NavigationLink {
+                                                JournalView(subject: subject)
+                                            } label: {
+                                                SubjectCardView(subject: subject) {
+                                                    Task {
+                                                        await appState.toggleSubjectHidden(subject)
+                                                    }
+                                                }
+                                            }
+                                        } else {
                                             SubjectCardView(subject: subject) {
                                                 Task {
                                                     await appState.toggleSubjectHidden(subject)
                                                 }
                                             }
                                         }
-                                    } else {
-                                        SubjectCardView(subject: subject) {
-                                            Task {
-                                                await appState.toggleSubjectHidden(subject)
-                                            }
-                                        }
                                     }
+                                } header: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: group.0.icon)
+                                        Text(group.0 == .unknown ? "Другие дисциплины" : group.0.rawValue)
+                                    }
+                                    .font(.headline)
+                                    .foregroundStyle(group.0.badgeColor)
+                                    .id(group.0 == groupedSubjects.first?.0 ? "subjects_top_anchor" : group.0.rawValue)
                                 }
-                            } header: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: group.0.icon)
-                                    Text(group.0 == .unknown ? "Другие дисциплины" : group.0.rawValue)
-                                }
-                                .font(.headline)
-                                .foregroundStyle(group.0.badgeColor)
                             }
                         }
-                    }
-                    .listStyle(.insetGrouped)
-                    .refreshable {
-                        await appState.loadSubjects(forceRefresh: true)
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
-                        if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 0 {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                proxy.scrollTo("subjects_top_anchor", anchor: .top)
+                        .listStyle(.insetGrouped)
+                        .refreshable {
+                            await appState.loadSubjects(forceRefresh: true)
+                        }
+                        .onReceive(NotificationCenter.default.publisher(for: .scrollToTopTab)) { notif in
+                            if let tabIdx = notif.userInfo?["tabIndex"] as? Int, tabIdx == 0 {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    if let firstSubjectId = groupedSubjects.first?.1.first?.id {
+                                        proxy.scrollTo(firstSubjectId, anchor: .top)
+                                    } else {
+                                        proxy.scrollTo("subjects_top_anchor", anchor: .top)
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
+            .navigationTitle("Дисциплины")
+            .searchable(text: $searchText, prompt: "Поиск предмета или преподавателя")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingPass = true
+                    } label: {
+                        Image(systemName: "qrcode")
+                            .font(.body.weight(.medium))
+                    }
+                    .tint(AppTheme.susuBluePrimary)
+                    .accessibilityLabel("Пропуск")
+                }
+            }
         }
-        .navigationTitle("Дисциплины")
-        .searchable(text: $searchText, prompt: "Поиск предмета или преподавателя")
+        .fullScreenCover(isPresented: $showingPass) {
+            PassView()
+        }
         .onAppear {
             if appState.selectedArchiveTab == "archived" {
                 selectedTab = .archived
@@ -196,5 +214,4 @@ public struct SubjectsView: View {
             }
         }
     }
-}
 }

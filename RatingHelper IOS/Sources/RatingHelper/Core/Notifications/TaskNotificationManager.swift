@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import UIKit
 
 public final class TaskNotificationManager: Sendable {
     public static let shared = TaskNotificationManager()
@@ -91,6 +92,17 @@ public final class TaskNotificationManager: Sendable {
                 .map { $0.identifier }
                 .filter { $0.hasPrefix(prefix) }
             center.removePendingNotificationRequests(withIdentifiers: idsToRemove)
+        }
+    }
+
+    public func clearBadgeAndDeliveredNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllDeliveredNotifications()
+        if #available(iOS 16.0, *) {
+            center.setBadgeCount(0) { _ in }
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.applicationIconBadgeNumber = 0
         }
     }
 

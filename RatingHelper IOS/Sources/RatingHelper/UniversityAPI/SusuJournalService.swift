@@ -55,6 +55,7 @@ public actor SusuJournalService {
             return try await auth.performAuthorizedRequest(url: url, headers: defaultHeaders())
         }
 
+        let cacheKey = isCourseWork ? "\(disciplineId)_cw" : disciplineId
         do {
             var raw: RawJournalResponse
             do {
@@ -68,13 +69,15 @@ public actor SusuJournalService {
                 }
             }
 
-            let journal = JournalData.from(raw: raw, disciplineId: disciplineId, term: term)
+            let journal = JournalData.from(raw: raw, disciplineId: cacheKey, term: term)
             await store.saveJournal(journal)
 
             // Save to semester history for dashboard
+            let displayName = isCourseWork ? "\(journal.disciplineName) (КР)" : journal.disciplineName
             let historyItem = SemesterHistoryItem(
-                name: journal.disciplineName,
-                subjectId: disciplineId,
+                name: displayName,
+                subjectId: cacheKey,
+                assessmentType: isCourseWork ? "Курсовая работа" : nil,
                 rating: journal.totalRating > 0 ? journal.totalRating : journal.currentRating
             )
             await store.saveSemesterHistoryItem(historyItem)
@@ -82,7 +85,7 @@ public actor SusuJournalService {
             return journal
         } catch {
             // Offline fallback if network error
-            if let cached = await store.loadJournal(disciplineId: disciplineId, term: term) {
+            if let cached = await store.loadJournal(disciplineId: cacheKey, term: term) {
                 return cached
             }
             throw error

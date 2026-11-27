@@ -18,6 +18,7 @@ public final class AppState: ObservableObject {
     @Published public var lastSyncDescription: String? = nil
     @Published public var errorMessage: String?
     @Published public var activeDraft: SavedPlan?
+    @Published public var activeCheckpointNotices: [CheckpointChangeNotice] = []
 
     private let auth = SusuAuthService.shared
     private let journalService = SusuJournalService.shared
@@ -159,8 +160,8 @@ public final class AppState: ObservableObject {
 
     public func toggleSubjectHidden(_ subject: Subject) async {
         let newHidden = !subject.isHidden
-        await journalService.setSubjectHidden(disciplineId: subject.disciplineId, term: selectedTerm, hidden: newHidden)
-        if let idx = subjects.firstIndex(where: { $0.disciplineId == subject.disciplineId }) {
+        await journalService.setSubjectHidden(disciplineId: subject.id, term: selectedTerm, hidden: newHidden)
+        if let idx = subjects.firstIndex(where: { $0.id == subject.id }) {
             subjects[idx].isHidden = newHidden
         }
     }
@@ -220,29 +221,28 @@ public final class AppState: ObservableObject {
     public func loadJournal(for subject: Subject) async {
         self.activeSubject = subject
         self.currentJournal = nil
+        self.activeCheckpointNotices = []
         isLoading = true
         errorMessage = nil
-        let isCw = (subject.assessmentType == .coursework || subject.assessmentType == .courseProject)
+        let isCw = subject.isCourseWork
         do {
             let journal = try await journalService.fetchJournal(disciplineId: subject.disciplineId, term: selectedTerm, isCourseWork: isCw)
             self.currentJournal = journal
 
             let latestRating = journal.totalRating > 0 ? journal.totalRating : journal.currentRating
-            if let subjectIndex = subjects.firstIndex(where: { $0.disciplineId == subject.disciplineId }) {
+            if let subjectIndex = subjects.firstIndex(where: { $0.id == subject.id }) {
                 subjects[subjectIndex].rating = latestRating
             }
             let semesterSubjects = subjects.filter { !$0.isHidden && $0.termNumber == selectedTerm }
             var ratings = semesterSubjects.map(\.rating)
-            if let index = semesterSubjects.firstIndex(where: { $0.disciplineId == subject.disciplineId }) {
+            if let index = semesterSubjects.firstIndex(where: { $0.id == subject.id }) {
                 ratings[index] = latestRating
             }
 
             let uId = effectiveUserId
             if !uId.isEmpty {
-                // 1. Запись истории конкретной дисциплины
-                if UUID(uuidString: subject.disciplineId) != nil {
-                    await supabase.recordRatingPoint(userId: uId, term: selectedTerm, subjectId: subject.disciplineId, rating: latestRating)
-                }
+                // 1. Запись истории конкретной дисциплины (с разделением курсовых и экзаменов)
+                await supabase.recordRatingPoint(userId: uId, term: selectedTerm, subjectId: subject.id, rating: latestRating)
 
                 // 2. Запись общего рейтинга семестра
                 // Учитываем только дисциплины с ненулевым рейтингом, чтобы неоткрытые журналы не роняли средний балл
@@ -255,7 +255,15 @@ public final class AppState: ObservableObject {
 
             // Загрузка сохраненного плана моделирования
             let drafts = await store.loadDrafts()
-            self.activeDraft = drafts[subject.disciplineId]
+            self.activeDraft = drafts[subject.id]
+
+            // Отслеживание изменений контрольных точек (весов и снижений баллов)
+            let notices = await store.checkAndRecordCheckpointChanges(
+                subjectId: subject.id,
+                subjectName: subject.disciplineName,
+                currentItems: journal.allContinuousAssignments
+            )
+            self.activeCheckpointNotices = notices
 
             // Фоновая синхронизация с Supabase (все типы контрольных точек: контроль, лабы, курсовые)
             let allEntries = journal.allContinuousAssignments
@@ -290,11 +298,12 @@ public final class AppState: ObservableObject {
 
             isLoading = false
         } catch {
-            if let cached = await store.loadJournal(disciplineId: subject.disciplineId, term: selectedTerm) {
+            if let cached = await store.loadJournal(disciplineId: subject.id, term: selectedTerm) {
                 self.currentJournal = cached
                 self.isOfflineMode = true
                 let drafts = await store.loadDrafts()
-                self.activeDraft = drafts[subject.disciplineId]
+                self.activeDraft = drafts[subject.id]
+                self.activeCheckpointNotices = await store.loadCheckpointNotices(subjectId: subject.id)
             } else {
                 errorMessage = error.localizedDescription
             }
@@ -302,10 +311,18 @@ public final class AppState: ObservableObject {
         }
     }
 
+    public func dismissCheckpointNotice(id: UUID) async {
+        guard let subject = activeSubject else { return }
+        await store.dismissCheckpointNotice(subjectId: subject.id, noticeId: id)
+        withAnimation {
+            activeCheckpointNotices.removeAll(where: { $0.id == id })
+        }
+    }
+
     public func savePlan(scores: [Double], bonus: Double, isExam: Bool, examScore: Double) async {
         guard let subject = activeSubject else { return }
         let plan = SavedPlan(
-            disciplineId: subject.disciplineId,
+            disciplineId: subject.id,
             subjectName: subject.disciplineName,
             scores: scores,
             bonus: bonus,
@@ -318,7 +335,7 @@ public final class AppState: ObservableObject {
 
     public func revertPlan() async {
         guard let subject = activeSubject else { return }
-        await store.removeDraft(disciplineId: subject.disciplineId)
+        await store.removeDraft(disciplineId: subject.id)
         self.activeDraft = nil
     }
 

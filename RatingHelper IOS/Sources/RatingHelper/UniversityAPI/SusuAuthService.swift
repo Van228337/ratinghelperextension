@@ -78,10 +78,15 @@ public struct LoginResponse: Codable, Sendable {
     public let middleName: String?
     public let lastName: String?
     public let student: [SusuStudentRaw]?
+    /// Номер электронного пропуска ЮУрГУ. Никогда не покидает устройство:
+    /// хранится только в Keychain и используется исключительно для локальной
+    /// генерации QR-кода.
+    public let passTicket: String?
 
     enum CodingKeys: String, CodingKey {
         case isLogged, accessToken, refreshToken, id, userName, email, susuEmail, photo
         case firstName, middleName, lastName, student
+        case passTicket
     }
 
     public init(from decoder: Decoder) throws {
@@ -104,6 +109,14 @@ public struct LoginResponse: Codable, Sendable {
         middleName = try? c.decodeIfPresent(String.self, forKey: .middleName)
         lastName = try? c.decodeIfPresent(String.self, forKey: .lastName)
         student = try? c.decodeIfPresent([SusuStudentRaw].self, forKey: .student)
+
+        if let ticket = try? c.decode(String.self, forKey: .passTicket), !ticket.isEmpty {
+            passTicket = ticket
+        } else if let numericTicket = try? c.decode(Int.self, forKey: .passTicket) {
+            passTicket = String(numericTicket)
+        } else {
+            passTicket = nil
+        }
     }
 }
 
@@ -115,6 +128,11 @@ public actor SusuAuthService {
     private let store = LocalStore.shared
     private let keychain = KeychainHelper.shared
     private var activeRefreshTask: Task<UserSession, Error>?
+
+    /// Номер электронного пропуска. Живёт только в памяти и в Keychain:
+    /// в session.json / Documents он не попадает.
+    private var passTicket: String?
+    private static let passTicketKeychainKey = "susu_pass_ticket"
 
     private init() {}
 
@@ -205,6 +223,7 @@ public actor SusuAuthService {
 
         self.session = newSession
         await store.saveSession(newSession)
+        storePassTicket(resp.passTicket)
 
         if let extId = resp.id {
             _ = keychain.saveString(key: "susu_external_user_id", value: extId)
@@ -244,6 +263,23 @@ public actor SusuAuthService {
         }
 
         return try await task.value
+    }
+
+    private func storePassTicket(_ ticket: String?) {
+        guard let ticket, !ticket.isEmpty else { return }
+        passTicket = ticket
+        _ = keychain.saveString(key: Self.passTicketKeychainKey, value: ticket)
+    }
+
+    /// Текущий номер пропуска для локальной генерации QR-кода.
+    /// Показывается только через Keychain и память процесса, без сетевых запросов.
+    public func currentPassTicket() -> String? {
+        if let ticket = passTicket, !ticket.isEmpty { return ticket }
+        guard let saved = keychain.readString(key: Self.passTicketKeychainKey), !saved.isEmpty else {
+            return nil
+        }
+        passTicket = saved
+        return saved
     }
 
     private func executeRefreshToken() async throws -> UserSession {
@@ -304,6 +340,7 @@ public actor SusuAuthService {
         if let newId = resp.id {
             current.externalUserId = newId
         }
+        storePassTicket(resp.passTicket)
 
         self.session = current
         await store.saveSession(current)
@@ -357,9 +394,11 @@ public actor SusuAuthService {
 
     public func logout() async {
         session = nil
+        passTicket = nil
         await store.clearSession()
         _ = keychain.delete(key: "susu_username")
         _ = keychain.delete(key: "susu_refresh_token")
         _ = keychain.delete(key: "susu_password")
+        _ = keychain.delete(key: Self.passTicketKeychainKey)
     }
 }

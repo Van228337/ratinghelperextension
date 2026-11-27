@@ -299,7 +299,7 @@ public actor SupabaseService {
             URLQueryItem(name: "order", value: "recorded_at.asc"),
             URLQueryItem(name: "select", value: "*")
         ]
-        if let sId = subjectId, !sId.isEmpty, UUID(uuidString: sId) != nil {
+        if let sId = subjectId, !sId.isEmpty {
             queryItems.append(URLQueryItem(name: "subject_id", value: "eq.\(sId)"))
         } else {
             queryItems.append(URLQueryItem(name: "subject_id", value: "is.null"))
@@ -325,7 +325,7 @@ public actor SupabaseService {
             "rating": rounded,
             "recorded_at": ISO8601DateFormatter().string(from: Date())
         ]
-        if let sId = subjectId, UUID(uuidString: sId) != nil {
+        if let sId = subjectId, !sId.isEmpty {
             item["subject_id"] = sId
         }
 

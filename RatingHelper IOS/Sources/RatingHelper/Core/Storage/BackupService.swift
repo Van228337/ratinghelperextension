@@ -1,7 +1,7 @@
 import Foundation
 
 public struct AppBackupData: Codable, Sendable {
-    public var version: String = "2.0.0"
+    public var version: String = "2.1.0"
     public var exportedAt: Date = Date()
     public var settings: AppSettings
     public var drafts: [String: SavedPlan]
@@ -12,7 +12,7 @@ public struct AppBackupData: Codable, Sendable {
     public var tasks: [StudyTask]?
 
     public init(
-        version: String = "2.0.0",
+        version: String = "2.1.0",
         exportedAt: Date = Date(),
         settings: AppSettings,
         drafts: [String: SavedPlan],

@@ -17,9 +17,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.0.0</string>
+    <string>2.2.0</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>4</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UIRequiredDeviceCapabilities</key>
@@ -41,5 +41,7 @@
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Сохранение выписки с оценками в приложение «Фото».</string>
 </dict>
 </plist>

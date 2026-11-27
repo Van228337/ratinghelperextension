@@ -125,12 +125,31 @@ CREATE TABLE IF NOT EXISTS public.admin_audit_log (
   created_at timestamptz DEFAULT now()
 );
 
+-- Если таблица уже существовала в ранней версии базы, дополняем её столбцами:
+ALTER TABLE public.admin_audit_log ADD COLUMN IF NOT EXISTS reason text;
+ALTER TABLE public.admin_audit_log ALTER COLUMN target_user_id DROP NOT NULL;
+
 ALTER TABLE public.admin_audit_log ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Deny direct public audit log select" ON public.admin_audit_log;
 CREATE POLICY "Deny direct public audit log select" ON public.admin_audit_log FOR SELECT TO anon, authenticated USING (false);
 
 
 -- 7. ОБНОВЛЕННЫЙ RPC РЕГИСТРАЦИИ ПОЛЬЗОВАТЕЛЯ (БЕЗ ФИО И EMAIL)
+-- ВАЖНО: Удаляем все предыдущие перегруженные версии функции, чтобы избежать ошибки 42725
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN 
+    SELECT oid::regprocedure AS func_sig
+    FROM pg_proc
+    WHERE proname = 'resolve_or_register_user'
+      AND pronamespace = 'public'::regnamespace
+  LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_sig || ' CASCADE';
+  END LOOP;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.resolve_or_register_user(
   p_external_user_id text,
   p_external_identity text DEFAULT NULL,
@@ -156,6 +175,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+#variable_conflict use_column
 DECLARE
   v_rec record;
   v_uid uuid;
@@ -173,14 +193,14 @@ BEGIN
 
   -- Проверка истечения временных санкций
   IF v_rec.sanction_expires_at IS NOT NULL AND v_rec.sanction_expires_at <= now() THEN
-    UPDATE public.app_users
+    UPDATE public.app_users AS u
     SET 
       can_upload_files = true,
       can_view_materials = true,
       can_publish_reviews = true,
       sanction_reason = NULL,
       sanction_expires_at = NULL
-    WHERE user_id = v_rec.user_id;
+    WHERE u.user_id = v_rec.user_id;
 
     v_rec.can_upload_files := true;
     v_rec.can_view_materials := true;
@@ -191,16 +211,16 @@ BEGIN
 
   IF v_rec.user_id IS NOT NULL THEN
     -- Обновляем техническую информацию без персональных данных
-    UPDATE public.app_users
+    UPDATE public.app_users AS u
     SET
-      username = coalesce(trim(p_username), username),
-      group_id = coalesce(trim(p_group_id), group_id),
-      group_name = coalesce(trim(p_group_name), group_name),
-      app_version = coalesce(trim(p_app_version), app_version),
-      device_info = coalesce(trim(p_device_info), device_info),
+      username = coalesce(trim(p_username), u.username),
+      group_id = coalesce(trim(p_group_id), u.group_id),
+      group_name = coalesce(trim(p_group_name), u.group_name),
+      app_version = coalesce(trim(p_app_version), u.app_version),
+      device_info = coalesce(trim(p_device_info), u.device_info),
       last_active = now(),
-      total_requests_count = coalesce(total_requests_count, 0) + 1
-    WHERE user_id = v_rec.user_id;
+      total_requests_count = coalesce(u.total_requests_count, 0) + 1
+    WHERE u.user_id = v_rec.user_id;
 
     RETURN QUERY
     SELECT 
@@ -237,7 +257,7 @@ BEGIN
     last_active,
     total_requests_count
   ) VALUES (
-    v_uid::text,
+    v_uid,
     trim(p_external_user_id),
     trim(p_external_identity),
     trim(p_username),
@@ -270,11 +290,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.resolve_or_register_user FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.resolve_or_register_user TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.resolve_or_register_user(text, text, text, text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.resolve_or_register_user(text, text, text, text, text, text, text) TO anon, authenticated;
 
 
 -- 8. RPC ПОЛУЧЕНИЯ МАТЕРИАЛОВ (С ПРОВЕРКОЙ can_view_materials)
+DROP FUNCTION IF EXISTS public.get_accessible_materials(text, uuid);
+
 CREATE OR REPLACE FUNCTION public.get_accessible_materials(
   p_user_id text,
   p_checkpoint_id uuid
@@ -409,7 +431,7 @@ BEGIN
 
     UPDATE public.app_users
     SET reviews_edit_count = coalesce(reviews_edit_count, 0) + 1
-    WHERE user_id = trim(p_user_id);
+    WHERE user_id::text = trim(p_user_id);
 
     RETURN jsonb_build_object(
       'success', true,
@@ -458,7 +480,7 @@ BEGIN
 
     UPDATE public.app_users
     SET reviews_count = coalesce(reviews_count, 0) + 1
-    WHERE user_id = trim(p_user_id);
+    WHERE user_id::text = trim(p_user_id);
 
     RETURN jsonb_build_object(
       'success', true,
@@ -469,8 +491,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.publish_teacher_review FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.publish_teacher_review TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.publish_teacher_review(text, text, uuid, text, text, integer, boolean, boolean, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.publish_teacher_review(text, text, uuid, text, text, integer, boolean, boolean, integer) TO anon, authenticated;
 
 
 -- 10. RPC УДАЛЕНИЯ ОТЗЫВА (ТОЛЬКО АВТОР ИЛИ АДМИН)
@@ -504,7 +526,7 @@ BEGIN
     IF v_review.user_id IS NOT NULL THEN
       UPDATE public.app_users
       SET reviews_delete_count = coalesce(reviews_delete_count, 0) + 1
-      WHERE user_id = v_review.user_id;
+      WHERE user_id::text = v_review.user_id;
     END IF;
 
     RETURN true;
@@ -514,8 +536,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.delete_teacher_review FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.delete_teacher_review TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.delete_teacher_review(text, uuid, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.delete_teacher_review(text, uuid, boolean) TO anon, authenticated;
 
 
 -- 11. RPC РЕГИСТРАЦИИ МАТЕРИАЛА С ПРОВЕРКОЙ can_upload_files И КВОТЫ
@@ -612,7 +634,7 @@ BEGIN
   SET 
     upload_count = coalesce(upload_count, 0) + 1,
     uploaded_bytes = coalesce(uploaded_bytes, 0) + p_file_size_bytes
-  WHERE user_id = trim(p_user_id);
+  WHERE user_id::text = trim(p_user_id);
 
   RETURN jsonb_build_object(
     'success', true,
@@ -622,8 +644,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.register_uploaded_material FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.register_uploaded_material TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.register_uploaded_material(text, uuid, uuid, text, text, text, text, bigint, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.register_uploaded_material(text, uuid, uuid, text, text, text, text, bigint, text, integer) TO anon, authenticated;
 
 
 -- 12. RPC ФИКСАЦИИ СТАТИСТИКИ GROQ
@@ -644,15 +666,15 @@ BEGIN
       groq_moderation_calls = coalesce(groq_moderation_calls, 0) + 1,
       groq_tokens_used = coalesce(groq_tokens_used, 0) + coalesce(p_tokens_used, 0),
       groq_rejected_calls = coalesce(groq_rejected_calls, 0) + CASE WHEN p_is_rejected THEN 1 ELSE 0 END
-    WHERE user_id = trim(p_user_id);
+    WHERE user_id::text = trim(p_user_id);
     RETURN true;
   END IF;
   RETURN false;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.record_groq_usage FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.record_groq_usage TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_groq_usage(text, integer, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_groq_usage(text, integer, boolean) TO anon, authenticated;
 
 
 -- 13. ПОЛНОЦЕННОЕ АДМИНИСТРИРОВАНИЕ (ВЕРСИЯ 4)
@@ -687,14 +709,14 @@ BEGIN
      OR trim(p_master_secret) = 'ratinghelper2026' THEN
     NULL;
   ELSE
-    SELECT is_admin INTO v_admin FROM public.app_users WHERE user_id = trim(p_admin_user_id);
+    SELECT is_admin INTO v_admin FROM public.app_users WHERE user_id::text = trim(p_admin_user_id);
     IF v_admin IS NULL OR NOT coalesce(v_admin.is_admin, false) THEN
       RAISE EXCEPTION 'Access denied: invalid admin credentials' USING ERRCODE = '42501';
     END IF;
   END IF;
 
   -- 2. Целевой пользователь
-  SELECT * INTO v_target FROM public.app_users WHERE user_id = trim(p_target_user_id);
+  SELECT * INTO v_target FROM public.app_users WHERE user_id::text = trim(p_target_user_id);
   IF v_target IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'Пользователь не найден');
   END IF;
@@ -707,22 +729,22 @@ BEGIN
   -- 4. Применение точечных разрешений
   IF p_can_upload_files IS NOT NULL THEN
     v_changes := v_changes || jsonb_build_object('can_upload_files', jsonb_build_object('old', v_target.can_upload_files, 'new', p_can_upload_files));
-    UPDATE public.app_users SET can_upload_files = p_can_upload_files WHERE user_id = trim(p_target_user_id);
+    UPDATE public.app_users SET can_upload_files = p_can_upload_files WHERE user_id::text = trim(p_target_user_id);
   END IF;
 
   IF p_can_view_materials IS NOT NULL THEN
     v_changes := v_changes || jsonb_build_object('can_view_materials', jsonb_build_object('old', v_target.can_view_materials, 'new', p_can_view_materials));
-    UPDATE public.app_users SET can_view_materials = p_can_view_materials WHERE user_id = trim(p_target_user_id);
+    UPDATE public.app_users SET can_view_materials = p_can_view_materials WHERE user_id::text = trim(p_target_user_id);
   END IF;
 
   IF p_can_publish_reviews IS NOT NULL THEN
     v_changes := v_changes || jsonb_build_object('can_publish_reviews', jsonb_build_object('old', v_target.can_publish_reviews, 'new', p_can_publish_reviews));
-    UPDATE public.app_users SET can_publish_reviews = p_can_publish_reviews WHERE user_id = trim(p_target_user_id);
+    UPDATE public.app_users SET can_publish_reviews = p_can_publish_reviews WHERE user_id::text = trim(p_target_user_id);
   END IF;
 
   IF p_cooldown_seconds IS NOT NULL THEN
     v_changes := v_changes || jsonb_build_object('cooldown_seconds', jsonb_build_object('old', v_target.review_edit_cooldown_seconds, 'new', p_cooldown_seconds));
-    UPDATE public.app_users SET review_edit_cooldown_seconds = p_cooldown_seconds WHERE user_id = trim(p_target_user_id);
+    UPDATE public.app_users SET review_edit_cooldown_seconds = p_cooldown_seconds WHERE user_id::text = trim(p_target_user_id);
   END IF;
 
   IF p_sanction_reason IS NOT NULL OR v_expires IS NOT NULL THEN
@@ -731,7 +753,7 @@ BEGIN
     SET 
       sanction_reason = coalesce(p_sanction_reason, sanction_reason),
       sanction_expires_at = v_expires
-    WHERE user_id = trim(p_target_user_id);
+    WHERE user_id::text = trim(p_target_user_id);
   END IF;
 
   -- 5. Журналирование действий администратора
@@ -757,8 +779,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.admin_set_user_permissions FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.admin_set_user_permissions TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_set_user_permissions(text, text, text, boolean, boolean, boolean, integer, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_set_user_permissions(text, text, text, boolean, boolean, boolean, integer, text, integer) TO anon, authenticated;
 
 
 -- 14. RPC ПОЛУЧЕНИЯ ДАННЫХ ДЛЯ АДМИНКИ (ПОЛЬЗОВАТЕЛИ БЕЗ ПЕРСОНАЛЬНЫХ ДАННЫХ)
@@ -839,5 +861,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.get_admin_dashboard_data FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_admin_dashboard_data TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_admin_dashboard_data(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_admin_dashboard_data(text) TO anon, authenticated;
