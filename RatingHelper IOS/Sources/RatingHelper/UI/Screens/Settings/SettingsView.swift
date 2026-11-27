@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.openURL) private var openURL
 
     @State private var showingAdminPrompt: Bool = false
     @State private var adminPinInput: String = ""
@@ -76,6 +77,26 @@ public struct SettingsView: View {
                 .onChange(of: appState.settings) { _, newSettings in
                     Task {
                         await appState.updateSettings(newSettings)
+                    }
+                }
+
+                // Legal documents
+                Section(header: Text("Документы и конфиденциальность")) {
+                    ForEach(LegalDocuments.Document.allCases) { document in
+                        Button {
+                            openURL(document.url)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text(document.title)
+                                    .foregroundColor(.primary)
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
                     }
                 }
 

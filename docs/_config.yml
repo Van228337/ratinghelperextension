@@ -1,0 +1,11 @@
+title: "Rating Helper — Документы"
+description: "Правовые документы браузерного расширения и мобильного приложения Rating Helper — Калькулятор БРС."
+lang: ru
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+
+exclude:
+  - README.md
